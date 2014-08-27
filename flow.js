@@ -65,6 +65,8 @@ jack2d('Flow', ['helper', 'obj'], function(Helper, Obj) {
         } else {
           target[op.func].apply(target, op.args);
         }
+      } else if(op.inc) {
+        target[op.prop] += op.value;
       } else {
         target[op.prop] = op.value;
       }
@@ -130,12 +132,19 @@ jack2d('Flow', ['helper', 'obj'], function(Helper, Obj) {
     andNot: function(prop) {
       return this.and(prop, false);
     },
-    set: function(prop, value) {
+    set: function(prop, value, inc) {
       var ops = this.flowList.get().ops;
       if(!ops) {
         this.flowList.get().ops = ops = [];
       }
-      ops.push({prop: prop, value: value});
+      ops.push({prop: prop, value: value, inc: inc});
+      return this;
+    },
+    inc: function(prop, value) {
+      if(!Helper.isDefined(this.context[prop])) {
+        this.context[prop] = 0;
+      }
+      this.set(prop, value, true);
       return this;
     },
     call: function(func) {
