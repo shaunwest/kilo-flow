@@ -7,7 +7,7 @@ jack2d('Flow', ['helper', 'obj'], function(Helper, Obj) {
 
   function FlowList() {
     this.items = [];
-    this.counter = 0;
+    this.counter = -1;
   }
 
   FlowList.prototype.set = function(item) {
@@ -87,23 +87,49 @@ jack2d('Flow', ['helper', 'obj'], function(Helper, Obj) {
     }
   }
 
+  function init(target) {
+    var flowList = target.flowList || new FlowList();
+    target.flowList = flowList;
+    return flowList;
+  }
+
   return Obj.mixin(['chronoObject', {
-    setContext: function(context) {
+    setFlowContext: function(context) {
+      var flowList = init(this),
+        flowObject = this;
       this.context = context;
+      this.context.onFrame(function() {
+        var i, len, flowConditions = flowObject.flowConditions;
+        if(flowConditions) {
+          for(i = 0, len = flowConditions.length; i < len; i++) {
+            if(this[flowConditions[i]]) {
+              update(this, flowList);
+              break;
+            }
+          }
+        } else {
+          update(this, flowList);
+        }
+      });
+      return this;
+    },
+    setFlowCondition: function(condition) {
+      if(!Helper.isArray(condition)) {
+        condition = [condition];
+      }
+      this.flowConditions = condition;
       return this;
     },
     when: function(prop, value) {
       if(!Helper.isDefined(value)) {
         value = true;
       }
+
       if(!this.flowList) {
-        var flowList = this.flowList = new FlowList();
-        this.context.onFrame(function() {
-          update(this, flowList);
-        });
-      } else {
-        this.flowList.next();
+        init(this);
       }
+
+      this.flowList.next();
       this.flowList.set({
         prop: prop,
         value: value,
