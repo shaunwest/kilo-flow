@@ -2,12 +2,12 @@
  * Created by Shaun on 8/20/14.
  */
 
-jack2d('FlowFactory', ['Factory', 'Flow'], function(Factory, Flow) {
+jack2d('FlowFactory', ['Factory', 'FlowObject'], function(Factory, FlowObject) {
   'use strict';
 
   return {
     flow: function(flowObject, context) {
-      flowObject = flowObject || Factory(Flow);
+      flowObject = flowObject || Factory(FlowObject);
       return flowObject.setFlowContext(context || this);
     },
     flowWhen: function(condition, flowObject, context) {
