@@ -2,7 +2,7 @@
  * Created by Shaun on 9/3/14.
  */
 
-jack2d('Flow', ['Proxy', 'WhenObject'], function(Proxy, WhenObject) {
+jack2d('Flow', ['obj', 'Proxy', 'WhenObject'], function(Obj, Proxy, WhenObject) {
   'use strict';
 
   function Flow(targetObject) {
@@ -12,22 +12,18 @@ jack2d('Flow', ['Proxy', 'WhenObject'], function(Proxy, WhenObject) {
   function makeFlowObject(targetObject, previousFlowObject)  {
     var methodQueue = (previousFlowObject) ? previousFlowObject.methodQueue : null;
     var resultList = (previousFlowObject) ? previousFlowObject.resultList : null;
+    //var whenObject = WhenObject(targetObject);
     var flowObject = Proxy(targetObject, methodQueue, resultList);
-    /*var flowObject = Proxy(targetObject, methodQueue,
-      function(methodData) {
-        var i, len, args = methodData.args;
-        for(i = 0, len = args.length; i < len; i++) {
-          if(args[i] === '|') {
-            args[i] = previousFlowObject.targetObject;
-          }
-        }
-      });*/
+    /*flowObject.done = function() {
+      return flowObject;
+    };*/
     flowObject.next = createNextFunction(flowObject);
     flowObject.when = createWhenFunction(targetObject, flowObject);
-    flowObject.pipe = createPipeFunction(flowObject);
+    //flowObject.pipe = createPipeFunction(flowObject);
     return flowObject;
   }
 
+  // TODO: Up for removal
   function createPipeFunction(flowObject) {
     return function() {
       var methodName = arguments[0],
@@ -40,14 +36,19 @@ jack2d('Flow', ['Proxy', 'WhenObject'], function(Proxy, WhenObject) {
   }
 
   function createWhenFunction(targetObject, previousFlowObject) {
-    return function(whenProp, whenVal) {
-      var whenObject = WhenObject(targetObject);
-      whenObject.next = createNextFunction(previousFlowObject);
-      whenObject.done = function() {
-        return previousFlowObject;
-      };
-      return whenObject.when(whenProp, whenVal);
-    };
+    return Proxy.augmentMethod(
+      previousFlowObject.methodQueue,
+      previousFlowObject.resultList,
+      function(whenProp, whenVal) {
+        var whenObject = WhenObject(targetObject);
+        whenObject.next = createNextFunction(previousFlowObject);
+        whenObject.done = function() {
+          return previousFlowObject;
+        };
+        return whenObject.when(whenProp, whenVal);
+      },
+      previousFlowObject
+    );
   }
 
   function createNextFunction(previousFlowObject) {
