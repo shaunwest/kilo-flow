@@ -2,113 +2,106 @@
  * Created by Shaun on 9/11/14.
  */
 
-jack2d('CommandRunner', ['chrono', 'CommandQueue'], function(Chrono, CommandQueue) {
+jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   'use strict';
 
-  function CommandRunner(commandList) {
+  function CommandRunner() {
     this.conditional = null;
+    this.repeatQueue = null;
+    this.running = false;
+    this.commandQueue = [];
+  }
+
+  CommandRunner.prototype.execute = function() {
     this.running = true;
-    this.commandQueue = new CommandQueue();
-    console.log('main command chrono');
     Chrono.register(function() {
       this.processCommands(this.commandQueue);
     }.bind(this));
-  }
+  };
 
-  CommandRunner.prototype.add = function(command) {
-    this.commandQueue.set(command);
+  CommandRunner.prototype.add = function(commandOrArray) {
+    var commandQueue = this.commandQueue;
+    if(Helper.isArray(commandOrArray)) {
+      commandOrArray.forEach(function(command) {
+        commandQueue.push(command);
+      });
+    } else {
+      commandQueue.push(commandOrArray);
+    }
   };
 
   CommandRunner.prototype.repeat = function() {
-    var repeatQueue = new CommandQueue();
-    console.log('repeat chrono');
+    var repeatQueue = [];
     Chrono.register(function() {
       this.processRepeatCommands(repeatQueue);
     }.bind(this));
     return repeatQueue;
   };
 
-  CommandRunner.prototype.processCommands = function(commandList) {
+  CommandRunner.prototype.processCommands = function(commandQueue) {
     var numCommands, command, result, i = 0;
 
-    numCommands = commandList.count();
+    numCommands = commandQueue.length;
 
     while(i < numCommands) {
-      command = commandList.get();
+      command = commandQueue.shift();
 
       result = this.evaluateCommand(command);
       // if the command is returned, save it back to the list
       if(result) {
-        commandList.set(result);
+        commandQueue.push(result);
       }
       i++;
     }
   };
 
-  CommandRunner.prototype.processRepeatCommands = function(commandList) {
-    var numCommands, command, conditional = null, i = 0;
+  CommandRunner.prototype.processRepeatCommands = function(commandQueue) {
+    var numCommands, command, conditional = null,
+      groupConditional = null, i = 0;
 
-    numCommands = commandList.count();
+    numCommands = commandQueue.length;
 
     while(i < numCommands) {
-      command = commandList.get();
-      if(command.whenProp) {
+      command = commandQueue.shift();
+      if(command.group) {
+        groupConditional = command;
+      } else if(command.whenProp) {
         conditional = command;
         conditional.ands.length = 0;
       } else if(conditional && command.andProp) {
         conditional.ands.push(command);
-      } else {
-        if(this.evaluateConditional(conditional)) {
-          this.executeCommand(command);
+      } else if(groupConditional) {
+        if(this.evaluateConditional(groupConditional)) {
+          if(conditional && this.evaluateConditional(conditional)) {
+            this.executeCommand(command);
+          }
         }
+      } else if(conditional && this.evaluateConditional(conditional)) {
+        this.executeCommand(command);
       }
-      commandList.set(command);
+      commandQueue.push(command);
       i++;
     }
   };
 
   CommandRunner.prototype.evaluateCommand = function(command) {
+    if(!this.running) {
+      return command;
+    }
     if(command.whenProp) {
       if(!this.repeatQueue) {
         this.repeatQueue = this.repeat();
       }
-      this.repeatQueue.set(command);
+      this.repeatQueue.push(command);
     } else if(command.done) {
       this.repeatQueue = null;
     } else if(this.repeatQueue) {
-      this.repeatQueue.set(command);
-    } else if(this.running) {
-      this.executeCommand(command);
+      this.repeatQueue.push(command);
     } else {
-      return command;
+      this.executeCommand(command);
     }
     return null;
   };
-
- /* CommandRunner.prototype.evaluateCommand = function(command) {
-    if(command.whenProp) {
-      this.conditional = command;
-      this.conditional.ands.length = 0;
-    } else if(command.andProp && this.conditional) {
-      this.conditional.ands.push(command);
-    } else if(command.done) {
-      this.conditional = null;
-    } else {
-      if(this.conditional) {
-        if(this.evaluateConditional(this.conditional)) {
-          this.executeCommand(command);
-        }
-      } else {
-        if(this.running) {
-          this.executeCommand(command);
-          // non-conditionals get thrown out after they run
-          return null;
-        }
-      }
-    }
-
-    return command;
-  };*/
 
   CommandRunner.prototype.evaluateConditional = function(conditional) {
     var context = conditional.context;
@@ -116,7 +109,6 @@ jack2d('CommandRunner', ['chrono', 'CommandQueue'], function(Chrono, CommandQueu
     if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
       context[conditional.whenProp] === conditional.whenValue) {
       return !(conditional.ands && !this.evaluateAnd(conditional.ands, context));
-      //return true;
     }
     return false;
   };
@@ -140,7 +132,8 @@ jack2d('CommandRunner', ['chrono', 'CommandQueue'], function(Chrono, CommandQueu
   };
 
   CommandRunner.prototype.executeCommand = function(command) {
-    var result;
+    var result, context, prop;
+
     if(command.func) {
       result = command.func.apply(command.context, command.args);
       if(result && result.then) {
@@ -150,7 +143,16 @@ jack2d('CommandRunner', ['chrono', 'CommandQueue'], function(Chrono, CommandQueu
         }.bind(this));
       }
     } else if(command.setProp) {
-      command.context[command.setProp] = command.setValue;
+      context = command.context;
+      prop = command.setProp;
+      if(command.inc) {
+        if(!context[prop]) {
+          context[prop] = 0;
+        }
+        context[prop] += command.setValue;
+      } else {
+        context[prop] = command.setValue;
+      }
     }
     return result;
   };
