@@ -16,7 +16,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     this.running = true;
     Chrono.register(function() {
       this.processCommands(this.commandQueue);
-    }.bind(this));
+    }.bind(this), Helper.getGID('command-runner'));
   };
 
   CommandRunner.prototype.add = function(commandOrArray) {
@@ -34,7 +34,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     var repeatQueue = [];
     Chrono.register(function() {
       this.processRepeatCommands(repeatQueue);
-    }.bind(this));
+    }.bind(this), Helper.getGID('command-repeat'));
     return repeatQueue;
   };
 
