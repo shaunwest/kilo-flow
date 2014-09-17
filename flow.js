@@ -2,17 +2,17 @@
  * Created by Shaun on 9/7/14.
  */
 
-jack2d('Flow', ['helper', 'obj', 'FlowObject'],
-function(Helper, Obj, FlowObject) {
+jack2d('Flow', ['helper', 'obj', 'FlowObject', 'FlowPlaceholders'],
+function(Helper, Obj, FlowObject, FlowPlaceholders) {
   'use strict';
 
-  function Flow(sourceObject) {
+  function Flow(sourceObjects, count) {
     var flowObject = Obj.create(FlowObject);
-    if(Helper.isString(sourceObject)) {
-      sourceObject = Obj.create(sourceObject);
-    }
-    return flowObject.init(sourceObject || {});
+    return flowObject.init(sourceObjects, count);
   }
+
+  Flow.last = FlowPlaceholders.last;
+  Flow.lastOne = FlowPlaceholders.lastOne;
 
   return Flow;
 });

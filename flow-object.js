@@ -2,7 +2,7 @@
  * Created by Shaun on 8/10/14.
  */
 
-jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, CommandRunner) {
+jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], function(Helper, Obj, CommandRunner, FlowPlaceholders) {
   'use strict';
 
   function attachCommandFunctions(sourceObject, commandObject) {
@@ -25,21 +25,54 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
 
   function makeCommandFunction(commandObject, func) {
     return function() {
+      var args = Helper.argsToArray(arguments);
+      args.forEach(function(arg, index) {
+        if(arg instanceof FlowPlaceholders.LastObjects) {
+          args[index] = commandObject.lastSourceObjects;
+        } else if(arg instanceof FlowPlaceholders.LastObject) {
+          args[index] = commandObject.lastSourceObjects[0];
+        }
+      });
       var commandRunner = commandObject.commandRunner;
       commandRunner.add({
         func: func,
-        args: Helper.argsToArray(arguments),
-        context: commandObject.sourceObject
+        args: args,
+        context: commandObject.sourceObjects
       });
       return commandObject;
     };
   }
 
+  function processSourceObjects(sourceObjects, count) {
+    var i, processedObjects = [];
+
+    if(Helper.isArray(sourceObjects)) {
+      sourceObjects.forEach(function(sourceObject) {
+        processedObjects.push(evaluateModule(sourceObject));
+      });
+    } else if(Helper.isString(sourceObjects) && count) {
+      for(i = 0; i < count; i++) {
+        processedObjects.push(evaluateModule(sourceObjects));
+      }
+    } else {
+      processedObjects.push(evaluateModule(sourceObjects));
+    }
+
+    return processedObjects;
+  }
+
+  function evaluateModule(moduleName) {
+    if(!Helper.isString(moduleName)) {
+      return moduleName;
+    }
+    return Obj.create(moduleName);
+  }
+
   return {
-    init: function(sourceObject, idle) {
+    init: function(sourceObjects, count, idle) {
       //this.complete = false;
-      this.sourceObject = sourceObject;
-      attachCommandFunctions(sourceObject, this);
+      this.sourceObjects = processSourceObjects(sourceObjects, count);
+      attachCommandFunctions(this.sourceObjects[0], this);
       this.commandRunner = new CommandRunner();
       if(!idle) {
         this.commandRunner.execute();
@@ -50,15 +83,25 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       this.commandRunner.add(flowObject.commandRunner.commandQueue);
       return this;
     },
-    next: function(sourceObject) {
-      removeCommandFunctions(this.sourceObject, this);
-      attachCommandFunctions(sourceObject, this);
-      this.sourceObject = sourceObject;
+    next: function(sourceObjects, count) {
+      this.lastSourceObjects = this.sourceObjects;
+      removeCommandFunctions(this.lastSourceObjects[0], this);
+      this.sourceObjects = processSourceObjects(sourceObjects, count);
+      attachCommandFunctions(this.sourceObjects[0], this);
       return this;
     },
     done: function() {
       this.commandRunner.add({
         done: true
+      });
+      return this;
+    },
+    each: function(func) {
+      var sourceObjects = this.sourceObjects;
+      this.call(function() {
+        sourceObjects.forEach(function(sourceObject) {
+          func(sourceObject);
+        });
       });
       return this;
     },
@@ -74,7 +117,7 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
         isFunc: Helper.isFunction(value),
         ands: [],
         group: group,
-        context: this.sourceObject
+        context: this.sourceObjects
       });
       return this;
     },
@@ -99,7 +142,7 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
         setProp: prop,
         setValue: value,
         inc: inc,
-        context: this.sourceObject
+        context: this.sourceObjects
       });
       return this;
     },
@@ -111,7 +154,8 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       var args = Array.prototype.slice.call(arguments, 1);
       this.commandRunner.add({
         func: func,
-        args: args
+        args: args,
+        context: this.sourceObjects
       });
       return this;
     }

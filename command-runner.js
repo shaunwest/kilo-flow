@@ -32,9 +32,11 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
 
   CommandRunner.prototype.repeat = function() {
     var repeatQueue = [];
+
     Chrono.register(function() {
       this.processRepeatCommands(repeatQueue);
     }.bind(this), Helper.getGID('command-repeat'));
+
     return repeatQueue;
   };
 
@@ -47,7 +49,6 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       command = commandQueue.shift();
 
       result = this.evaluateCommand(command);
-      // if the command is returned, save it back to the list
       if(result) {
         commandQueue.push(result);
       }
@@ -56,8 +57,8 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   };
 
   CommandRunner.prototype.processRepeatCommands = function(commandQueue) {
-    var numCommands, command, conditional = null,
-      groupConditional = null, i = 0;
+    var numCommands, command, context, conditional = null,
+      groupConditional = null, i = 0, j;
 
     numCommands = commandQueue.length;
 
@@ -71,13 +72,21 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       } else if(conditional && command.andProp) {
         conditional.ands.push(command);
       } else if(groupConditional) {
-        if(this.evaluateConditional(groupConditional)) {
-          if(conditional && this.evaluateConditional(conditional)) {
-            this.executeCommand(command);
+        context = groupConditional.context;
+        for(j = 0; j < context.length; j++) {
+          if(this.evaluateConditional(groupConditional, context[j])) {
+            if(conditional && this.evaluateConditional(conditional, conditional.context[j])) {
+              this.executeCommand(command, conditional.context[j]);
+            }
           }
         }
-      } else if(conditional && this.evaluateConditional(conditional)) {
-        this.executeCommand(command);
+      } else if(conditional) {
+        context = conditional.context;
+        for(j = 0; j < context.length; j++) {
+          if(this.evaluateConditional(conditional, context[j])) {
+            this.executeCommand(command, context[j]);
+          }
+        }
       }
       commandQueue.push(command);
       i++;
@@ -85,6 +94,8 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   };
 
   CommandRunner.prototype.evaluateCommand = function(command) {
+    var i, context;
+
     if(!this.running) {
       return command;
     }
@@ -98,14 +109,15 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     } else if(this.repeatQueue) {
       this.repeatQueue.push(command);
     } else {
-      this.executeCommand(command);
+      context = command.context;
+      for(i = 0; i < context.length; i++) {
+        this.executeCommand(command, context[i]);
+      }
     }
     return null;
   };
 
-  CommandRunner.prototype.evaluateConditional = function(conditional) {
-    var context = conditional.context;
-
+  CommandRunner.prototype.evaluateConditional = function(conditional, context) {
     if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
       context[conditional.whenProp] === conditional.whenValue) {
       return !(conditional.ands && !this.evaluateAnd(conditional.ands, context));
@@ -131,11 +143,11 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     return true;
   };
 
-  CommandRunner.prototype.executeCommand = function(command) {
-    var result, context, prop;
+  CommandRunner.prototype.executeCommand = function(command, context) {
+    var result, prop;
 
     if(command.func) {
-      result = command.func.apply(command.context, command.args);
+      result = command.func.apply(context, command.args);
       if(result && result.then) {
         this.running = false;
         result.then(function(data) {
@@ -143,7 +155,6 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
         }.bind(this));
       }
     } else if(command.setProp) {
-      context = command.context;
       prop = command.setProp;
       if(command.inc) {
         if(!context[prop]) {

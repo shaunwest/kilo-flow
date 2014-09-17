@@ -7,10 +7,7 @@ jack2d('FlowDefinition', ['helper', 'obj', 'FlowObject'], function(Helper, Obj, 
 
   function FlowDefinition(sourceObject) {
     var flowObject = Obj.create(FlowObject);
-    if(Helper.isString(sourceObject)) {
-      sourceObject = Obj.create(sourceObject);
-    }
-    return flowObject.init(sourceObject || {}, true);
+    return flowObject.init(sourceObject, 1, true);
   }
 
   return FlowDefinition;
