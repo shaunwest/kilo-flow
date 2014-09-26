@@ -6,6 +6,7 @@ jack2d('Flow', ['helper', 'obj', 'FlowObject', 'FlowPlaceholders'],
 function(Helper, Obj, FlowObject, FlowPlaceholders) {
   'use strict';
 
+  // TODO: should there be an option to pass in a factory?
   function Flow(sourceObjects, count) {
     var flowObject = Obj.create(FlowObject);
     return flowObject.init(sourceObjects, count);

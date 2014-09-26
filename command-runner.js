@@ -2,22 +2,18 @@
  * Created by Shaun on 9/11/14.
  */
 
+// TODO: refactor
+
 jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   'use strict';
 
-  function CommandRunner() {
+  function CommandRunner(context) {
+    this.context = context;
     this.conditional = null;
-    this.repeatQueue = null;
-    this.running = false;
+    this.specialQueue = null;
+    this.waiting = true;
     this.commandQueue = [];
   }
-
-  CommandRunner.prototype.execute = function() {
-    this.running = true;
-    Chrono.register(function() {
-      this.processCommands(this.commandQueue);
-    }.bind(this), Helper.getGID('command-runner'));
-  };
 
   CommandRunner.prototype.add = function(commandOrArray) {
     var commandQueue = this.commandQueue;
@@ -30,7 +26,37 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     }
   };
 
-  CommandRunner.prototype.repeat = function() {
+  CommandRunner.prototype.execute = function(onComplete) {
+    this.waiting = false;
+    Chrono.register(function() {
+      this.processCommands(this.commandQueue);
+      /*if(this.commandQueue.length === 0) {
+        if(onComplete) {
+          onComplete();
+          onComplete = null;
+        }
+      }*/
+    }.bind(this), Helper.getGID('command-runner'));
+  };
+
+  CommandRunner.prototype.processCommands = function(commandQueue) {
+    var numCommands, command, returned, i = 0;
+
+    numCommands = commandQueue.length;
+
+
+    while(i < numCommands) {
+      command = commandQueue.shift();
+
+      returned = this.evaluateCommand(command);
+      if(returned) {
+        commandQueue.push(returned);
+      }
+      i++;
+    }
+  };
+
+  CommandRunner.prototype.repeatQueue = function() {
     var repeatQueue = [];
 
     Chrono.register(function() {
@@ -40,25 +66,24 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     return repeatQueue;
   };
 
-  CommandRunner.prototype.processCommands = function(commandQueue) {
-    var numCommands, command, result, i = 0;
-
-    numCommands = commandQueue.length;
-
-    while(i < numCommands) {
-      command = commandQueue.shift();
-
-      result = this.evaluateCommand(command);
-      if(result) {
-        commandQueue.push(result);
-      }
-      i++;
+  CommandRunner.prototype.eventQueue = function(command) {
+    var eventQueue = [], context = this.context;
+    var that = this;
+    if(context.addEventListener) {
+      context.addEventListener(command.eventName, function() {
+        var i, numCommands = eventQueue.length;
+        for(i = 0; i < numCommands; i++) {
+          that.executeCommand(eventQueue[i]);
+        }
+      });
     }
+
+    return eventQueue;
   };
 
   CommandRunner.prototype.processRepeatCommands = function(commandQueue) {
-    var numCommands, command, context, conditional = null,
-      groupConditional = null, i = 0, j;
+    var numCommands, command, conditional = null,
+      groupConditional = null, i = 0;
 
     numCommands = commandQueue.length;
 
@@ -66,26 +91,20 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       command = commandQueue.shift();
       if(command.group) {
         groupConditional = command;
-      } else if(command.whenProp) {
+      } else if(command.whenProp || command.watchProp) {
         conditional = command;
         conditional.ands.length = 0;
       } else if(conditional && command.andProp) {
         conditional.ands.push(command);
       } else if(groupConditional) {
-        context = groupConditional.context;
-        for(j = 0; j < context.length; j++) {
-          if(this.evaluateConditional(groupConditional, context[j])) {
-            if(conditional && this.evaluateConditional(conditional, conditional.context[j])) {
-              this.executeCommand(command, conditional.context[j]);
-            }
+        if(this.evaluateConditional(groupConditional)) {
+          if(conditional && this.evaluateConditional(conditional)) {
+            this.executeCommand(command);
           }
         }
       } else if(conditional) {
-        context = conditional.context;
-        for(j = 0; j < context.length; j++) {
-          if(this.evaluateConditional(conditional, context[j])) {
-            this.executeCommand(command, context[j]);
-          }
+        if(this.evaluateConditional(conditional)) {
+          this.executeCommand(command);
         }
       }
       commandQueue.push(command);
@@ -94,39 +113,47 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   };
 
   CommandRunner.prototype.evaluateCommand = function(command) {
-    var i, context;
-
-    if(!this.running) {
+    if(this.waiting) {
       return command;
     }
-    if(command.whenProp) {
-      if(!this.repeatQueue) {
-        this.repeatQueue = this.repeat();
+    if(command.whenProp || command.watchProp) { // FIXME: when should cancel a previous 'event'
+      if(!this.specialQueue) {
+        this.specialQueue = this.repeatQueue();
       }
-      this.repeatQueue.push(command);
+      this.specialQueue.push(command);
+    } else if(command.eventName) {
+      this.specialQueue = this.eventQueue(command);
     } else if(command.done) {
-      this.repeatQueue = null;
-    } else if(this.repeatQueue) {
-      this.repeatQueue.push(command);
+      this.specialQueue = null;
+    } else if(this.specialQueue) {
+      this.specialQueue.push(command);
     } else {
-      context = command.context;
-      for(i = 0; i < context.length; i++) {
-        this.executeCommand(command, context[i]);
-      }
+      return this.executeCommand(command);
     }
     return null;
   };
 
-  CommandRunner.prototype.evaluateConditional = function(conditional, context) {
+  CommandRunner.prototype.checkWatch = function(command) {
+    var context = this.context;
+    if(context[command.watchProp] !== command.lastValue) {
+      command.lastValue = context[command.watchProp];
+      return true;
+    }
+    return false;
+  };
+
+  CommandRunner.prototype.evaluateConditional = function(conditional) {
+    var context = this.context;
     if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
-      context[conditional.whenProp] === conditional.whenValue) {
+      (conditional.watchProp && this.checkWatch(conditional, context)) ||
+      conditional.whenProp && (context[conditional.whenProp] === conditional.whenValue)) {
       return !(conditional.ands && !this.evaluateAnd(conditional.ands, context));
     }
     return false;
   };
 
-  CommandRunner.prototype.evaluateAnd = function(ands, context) {
-    var numAnds, and, i;
+  CommandRunner.prototype.evaluateAnd = function(ands) {
+    var numAnds, context = this.context, and, i;
     numAnds = ands.length;
     for(i = 0; i < numAnds; i++) {
       and = ands[i];
@@ -143,15 +170,28 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     return true;
   };
 
-  CommandRunner.prototype.executeCommand = function(command, context) {
-    var result, prop;
+  CommandRunner.prototype.executeCommand = function(command) {
+    var context = this.context, result, prop, args;
 
-    if(command.func) {
+    if(command.complete) {
+      if(this.commandQueue.length === 0) {
+        command.func.apply(command); //, command.args);
+      } else {
+        result = command;
+      }
+    } else if(command.eventName) {
+      if(context.addEventListener) {
+        context.addEventListener(command.eventName, command.func);
+      }
+    } else if(command.func) {
+      if(command.contextAsArg) {
+        command.args.unshift(context);
+      }
       result = command.func.apply(context, command.args);
       if(result && result.then) {
-        this.running = false;
+        this.waiting = true;
         result.then(function(data) {
-          this.running = true;
+          this.waiting = false;
         }.bind(this));
       }
     } else if(command.setProp) {
