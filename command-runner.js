@@ -184,10 +184,10 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
         context.addEventListener(command.eventName, command.func);
       }
     } else if(command.func) {
-      if(command.contextAsArg) {
+      if(command.sourceAsArg) {
         command.args.unshift(context);
       }
-      result = command.func.apply(context, command.args);
+      result = command.func.apply(command.context || context, command.args);
       if(result && result.then) {
         this.waiting = true;
         result.then(function(data) {
