@@ -138,19 +138,6 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], fun
       var flowObject = Obj.create(FlowObject);
       return flowObject.init(sourceObjects, count, false, this.results);
     },
-    /*next: function(sourceObjects, count) {
-      var commandRunners, results = this.results;
-      this.sourceIndex = 0;
-      removeCommandFunctions(results.current().sourceObjects[0], this);
-
-      sourceObjects = processSourceObjects(sourceObjects, count);
-      commandRunners = createCommandRunners(sourceObjects);
-      results.add(sourceObjects, commandRunners);
-
-      attachCommandFunctions(sourceObjects[0], this);
-      executeCommandRunners(commandRunners);
-      return this;
-    },*/
     done: function() {
       this.addCommand({done: true});
       return this;
