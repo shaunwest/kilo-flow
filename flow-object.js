@@ -2,7 +2,7 @@
  * Created by Shaun on 8/10/14.
  */
 
-jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], function(Helper, Obj, CommandRunner, FlowPlaceholders) {
+jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, CommandRunner) {
   'use strict';
 
   function attachCommandFunctions(sourceObject, commandObject) {
@@ -130,8 +130,11 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], fun
     addCommand: function(command) {
       this.results.current().addCommand(command);
     },
-    include: function(flowObject) {
-      this.addCommand(flowObject.commandRunner.commandQueue); //FIXME
+    include: function(flowDefinition) {
+      this.get(function(sourceObject) {
+        var flowObject = flowDefinition(sourceObject);
+        this.addCommand(flowObject.results.current().commandRunners[0].commandQueue);
+      });
       return this;
     },
     next: function(sourceObjects, count) {
@@ -166,7 +169,7 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], fun
       }, this.sourceIndex);
       return this;
     },
-    getLastOnComplete: function(func) {
+    getLast: function(func) {
       var commandObject = this;
       var current = commandObject.results.current();
       var last = commandObject.results.last();
@@ -185,18 +188,18 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner', 'FlowPlaceholders'], fun
 
       return this;
     },
-    getLast: function(func) {
+    /*getLast: function(func) {
       this.addCommand({
         func: func,
         args: this.results.last().sourceObjects
       });
       return this;
-    },
+    },*/
     // TODO:
     watch: function(prop) {
       this.addCommand({
         watchProp: prop,
-        lastValue: null, // FIXED... hopefully <-- doesn't work because values vary between sourceObjects
+        lastValue: null, // FIXED... hopefully -- doesn't work because values vary between sourceObjects
         ands: []
       });
       return this;
