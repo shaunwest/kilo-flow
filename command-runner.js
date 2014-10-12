@@ -49,7 +49,6 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       }.bind(this), Helper.getGID('command-repeat'));
     }
 
-
     return repeatQueue;
   };
 

@@ -185,14 +185,6 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
 
       return this;
     },
-    /*getLast: function(func) {
-      this.addCommand({
-        func: func,
-        args: this.results.last().sourceObjects
-      });
-      return this;
-    },*/
-    // TODO:
     watch: function(prop) {
       this.addCommand({
         watchProp: prop,
