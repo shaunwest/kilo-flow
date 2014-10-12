@@ -7,9 +7,9 @@ function(Helper, Obj, FlowObject) {
   'use strict';
 
   // TODO: should there be an option to pass in a factory?
-  function Flow(sourceObjects, count) {
+  function Flow(sourceObjects, count, hookId) {
     var flowObject = Obj.create(FlowObject);
-    return flowObject.init(sourceObjects, count);
+    return flowObject.init(sourceObjects, count, hookId);
   }
 
   return Flow;

@@ -2,66 +2,53 @@
  * Created by Shaun on 9/11/14.
  */
 
-// TODO: refactor
-
+// Got rid of 'commandQueue'. Command Runners no longer wait for promises.
 jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   'use strict';
 
-  function CommandRunner(context) {
+  function CommandRunner(context, chronoId) {
+    this.chronoId = chronoId;
     this.context = context;
     this.conditional = null;
     this.specialQueue = null;
-    this.waiting = true;
-    this.commandQueue = [];
   }
 
-  CommandRunner.prototype.add = function(commandOrArray) {
-    var commandQueue = this.commandQueue;
-    if(Helper.isArray(commandOrArray)) {
-      commandOrArray.forEach(function(command) {
-        commandQueue.push(command);
-      });
-    } else {
-      commandQueue.push(commandOrArray);
-    }
+  CommandRunner.prototype.add = function(command) {
+    this.evaluateCommand(command);
   };
 
-  CommandRunner.prototype.execute = function(onComplete) {
-    this.waiting = false;
-    Chrono.register(function() {
-      this.processCommands(this.commandQueue);
-      /*if(this.commandQueue.length === 0) {
-        if(onComplete) {
-          onComplete();
-          onComplete = null;
-        }
-      }*/
-    }.bind(this), Helper.getGID('command-runner'));
-  };
-
-  CommandRunner.prototype.processCommands = function(commandQueue) {
-    var numCommands, command, returned, i = 0;
-
-    numCommands = commandQueue.length;
-
-
-    while(i < numCommands) {
-      command = commandQueue.shift();
-
-      returned = this.evaluateCommand(command);
-      if(returned) {
-        commandQueue.push(returned);
+  CommandRunner.prototype.evaluateCommand = function(command) {
+    if(command.whenProp || command.watchProp) { // FIXME: when should cancel a previous 'event'
+      if(!this.specialQueue) {
+        this.specialQueue = this.repeatQueue();
       }
-      i++;
+      this.specialQueue.push(command);
+    } else if(command.eventName) {
+      this.specialQueue = this.eventQueue(command);
+    } else if(command.done) {
+      this.specialQueue = null;
+    } else if(this.specialQueue) {
+      this.specialQueue.push(command);
+    } else {
+      return this.executeCommand(command);
     }
+    return null;
   };
 
   CommandRunner.prototype.repeatQueue = function() {
     var repeatQueue = [];
 
-    Chrono.register(function() {
-      this.processRepeatCommands(repeatQueue);
-    }.bind(this), Helper.getGID('command-repeat'));
+    if(this.chronoId) {
+      Chrono.registerAfter(this.chronoId, function() {
+        this.processRepeatCommands(repeatQueue);
+      }.bind(this), Helper.getGID('command-repeat'));
+
+    } else {
+      Chrono.register(function() {
+        this.processRepeatCommands(repeatQueue);
+      }.bind(this), Helper.getGID('command-repeat'));
+    }
+
 
     return repeatQueue;
   };
@@ -110,27 +97,6 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       commandQueue.push(command);
       i++;
     }
-  };
-
-  CommandRunner.prototype.evaluateCommand = function(command) {
-    if(this.waiting) {
-      return command;
-    }
-    if(command.whenProp || command.watchProp) { // FIXME: when should cancel a previous 'event'
-      if(!this.specialQueue) {
-        this.specialQueue = this.repeatQueue();
-      }
-      this.specialQueue.push(command);
-    } else if(command.eventName) {
-      this.specialQueue = this.eventQueue(command);
-    } else if(command.done) {
-      this.specialQueue = null;
-    } else if(this.specialQueue) {
-      this.specialQueue.push(command);
-    } else {
-      return this.executeCommand(command);
-    }
-    return null;
   };
 
   CommandRunner.prototype.checkWatch = function(command) {
@@ -187,13 +153,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       if(command.sourceAsArg) {
         command.args.unshift(context);
       }
-      result = command.func.apply(command.context || context, command.args);
-      if(result && result.then) {
-        this.waiting = true;
-        result.then(function(data) {
-          this.waiting = false;
-        }.bind(this));
-      }
+      command.func.apply(command.context || context, command.args);
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {

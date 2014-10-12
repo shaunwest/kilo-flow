@@ -60,10 +60,10 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
     return Obj.create(moduleName);
   }
 
-  function createCommandRunners(sourceObjects) {
+  function createCommandRunners(sourceObjects, hookId) {
     var commandRunner, commandRunners = [];
     sourceObjects.forEach(function(sourceObject) {
-      commandRunner = new CommandRunner(sourceObject);
+      commandRunner = new CommandRunner(sourceObject, hookId);
       commandRunners.push(commandRunner);
     });
     return commandRunners;
@@ -109,21 +109,17 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
   };
 
   var FlowObject = {
-    init: function(sourceObjects, count, idle, results) {
+    init: function(sourceObjects, count, hookId, results) {
       var commandRunners;
 
       results = this.results = results || Obj.clone(Results);
       this.sourceIndex = 0;
-
+      this.hookId = hookId;
       sourceObjects = processSourceObjects(sourceObjects, count);
-      commandRunners = createCommandRunners(sourceObjects);
+      commandRunners = createCommandRunners(sourceObjects, hookId);
       results.add(sourceObjects, commandRunners);
 
       attachCommandFunctions(sourceObjects[0], this); // TODO: investigate need for [0]
-
-      if(!idle) {
-        executeCommandRunners(commandRunners);
-      }
 
       return this;
     },
@@ -137,9 +133,10 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       });
       return this;
     },
+    // think about getting rid of next
     next: function(sourceObjects, count) {
       var flowObject = Obj.create(FlowObject);
-      return flowObject.init(sourceObjects, count, false, this.results);
+      return flowObject.init(sourceObjects, count, this.hookId, this.results);
     },
     done: function() {
       this.addCommand({done: true});
