@@ -8,7 +8,7 @@ function(Helper, Obj, FlowObject) {
 
   function Flow(sourceObjects, count, hookId) {
     var flowObject = Obj.create(FlowObject);
-    return flowObject.init(sourceObjects, count, hookId);
+    return flowObject.source(sourceObjects, count, hookId);
   }
 
   return Flow;

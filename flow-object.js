@@ -5,13 +5,31 @@
 jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, CommandRunner) {
   'use strict';
 
+  function containsProp(prop, targetObject) {
+    return (Object.keys(targetObject).indexOf(prop) !== -1); // TODO: add indexOf polyfill
+  }
+
   function attachCommandFunctions(sourceObject, commandObject) {
     Object.keys(sourceObject).forEach(function(prop) {
-      if(!Helper.isFunction(sourceObject[prop])) {
+      if(!Helper.isFunction(sourceObject[prop]) || containsProp(prop, FlowObject)) {
         return;
       }
+
+      if(!commandObject.__savedFunctions) {
+        commandObject.__savedFunctions = {};
+      }
+      commandObject.__savedFunctions[prop] = sourceObject[prop];
       commandObject[prop] = makeCommandFunction(commandObject, sourceObject[prop]);
     });
+  }
+
+  function restoreFunctions(commandObject, targetObject) {
+    var savedFunctions = commandObject.__savedFunctions;
+    if(savedFunctions) {
+      Object.keys(savedFunctions).forEach(function(prop) {
+        targetObject[prop] = savedFunctions[prop];
+      });
+    }
   }
 
   function removeCommandFunctions(sourceObject, commandObject) {
@@ -109,7 +127,25 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
   };
 
   var FlowObject = {
-    init: function(sourceObjects, count, hookId, results) {
+    flow: function(hookId) {
+      var commandRunners, chronoId;
+      var commandObject = Obj.create(CommandObject);
+      var results = commandObject.results = Obj.clone(Results);
+
+      if(hookId && this.getChronoId) {
+        chronoId = this.getChronoId(hookId);
+        commandObject.hookId = hookId;
+      }
+      commandObject.sourceIndex = 0;
+
+      commandRunners = createCommandRunners([this], chronoId);
+      results.add([this], commandRunners);
+
+      attachCommandFunctions(this, commandObject);
+
+      return commandObject;
+    },
+    source: function(sourceObjects, count, hookId, results) {
       var commandRunners;
 
       results = this.results = results || Obj.clone(Results);
@@ -119,9 +155,16 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       commandRunners = createCommandRunners(sourceObjects, hookId);
       results.add(sourceObjects, commandRunners);
 
+      // TODO: should old command functions be removed (if they exist)?
       attachCommandFunctions(sourceObjects[0], this); // TODO: investigate need for [0]
 
       return this;
+    }
+  };
+
+  var CommandObject = {
+    flowEnd: function() {
+      return this.results.current().sourceObjects[0];
     },
     addCommand: function(command) {
       this.results.current().addCommand(command);
@@ -133,10 +176,9 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       });
       return this;
     },
-    // think about getting rid of next
     next: function(sourceObjects, count) {
       var flowObject = Obj.create(FlowObject);
-      return flowObject.init(sourceObjects, count, this.hookId, this.results);
+      return flowObject.source(sourceObjects, count, this.hookId, this.results);
     },
     done: function() {
       this.addCommand({done: true});
