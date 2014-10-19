@@ -6,6 +6,28 @@
 jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   'use strict';
 
+  function getLastObject(obj, propStr) {
+    var props = propStr.split('.');
+    if(props.length === 1) {
+      return obj;
+    }
+    return getObject(obj, props);
+
+    function getObject(obj, props) {
+      if(!obj) {
+        return obj;
+      } else if(props.length === 2) {
+        return obj[props[0]];
+      } else {
+        return getObject(obj[props[0]], props.slice(1));
+      }
+    }
+  }
+
+  function getLastProp(propStr) {
+    return propStr.split('.').slice(-1)[0];
+  }
+
   function CommandRunner(context, chronoId) {
     this.chronoId = chronoId;
     this.context = context;
@@ -14,6 +36,10 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
   }
 
   CommandRunner.prototype.add = function(command) {
+    if(command.setProp) {
+      command.context = getLastObject(this.context, command.setProp);
+      command.setProp = getLastProp(command.setProp);
+    }
     this.evaluateCommand(command);
   };
 
@@ -77,6 +103,8 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       command = commandQueue.shift();
       if(command.group) {
         groupConditional = command;
+      } else if(command.endGroup) {
+        groupConditional = null;
       } else if(command.whenProp || command.watchProp) {
         conditional = command;
         conditional.ands.length = 0;
@@ -156,12 +184,12 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
-        if(!context[prop]) {
-          context[prop] = 0;
+        if(!command.context[prop]) {
+          command.context[prop] = 0;
         }
-        context[prop] += command.setValue;
+        command.context[prop] += command.setValue;
       } else {
-        context[prop] = command.setValue;
+        command.context[prop] = command.setValue;
       }
     }
     return result;

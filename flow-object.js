@@ -126,11 +126,35 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
     }
   };
 
+  function flowAlias(commandObject, commandName, args) {
+    return commandObject[commandName].apply(commandObject, args);
+  }
+
   var FlowObject = {
+    after: function(hookId) {
+      this.hookId = hookId;
+      return this;
+    },
+    on: function() {
+      return flowAlias(this.flow(), 'on', arguments);
+    },
+    when: function() {
+      return flowAlias(this.flow(), 'when', arguments);
+    },
+    whenGroup: function() {
+      return flowAlias(this.flow(), 'whenGroup', arguments);
+    },
+    whenNot: function() {
+      return flowAlias(this.flow(), 'whenNot', arguments);
+    },
+    watch: function() {
+      return flowAlias(this.flow(), 'watch', arguments);
+    },
     flow: function(hookId) {
       var commandRunners, chronoId;
       var commandObject = Obj.create(CommandObject);
       var results = commandObject.results = Obj.clone(Results);
+      hookId = hookId || this.hookId;
 
       if(hookId && this.getChronoId) {
         chronoId = this.getChronoId(hookId);
@@ -180,7 +204,7 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       var flowObject = Obj.create(FlowObject);
       return flowObject.source(sourceObjects, count, this.hookId, this.results);
     },
-    done: function() {
+    done: function() { //TODO: change to 'end'
       this.addCommand({done: true});
       return this;
     },
@@ -224,7 +248,6 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
           }
         });
       });
-
       return this;
     },
     watch: function(prop) {
@@ -237,6 +260,10 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
     },
     whenGroup: function(prop, value) {
       return this.when(prop, value, true);
+    },
+    endGroup: function() {
+      this.addCommand({endGroup: true});
+      return this;
     },
     when: function(prop, value, group) {
       value = Helper.def(value, true);
