@@ -6,9 +6,10 @@ jack2d('Flow', ['helper', 'obj', 'FlowObject'],
 function(Helper, Obj, FlowObject) {
   'use strict';
 
-  function Flow(sourceObjects, count, hookId) {
-    var flowObject = Obj.create(FlowObject);
-    return flowObject.source(sourceObjects, count, hookId);
+  function Flow(sourceObject, count, hookId) {
+    //var flowObject = Obj.create(FlowObject);
+    //return flowObject.source(sourceObjects, count, hookId);
+    return FlowObject.instance(sourceObject);
   }
 
   return Flow;

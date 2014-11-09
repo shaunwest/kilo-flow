@@ -2,7 +2,7 @@
  * Created by Shaun on 8/10/14.
  */
 
-jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, CommandRunner) {
+march('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, CommandRunner) {
   'use strict';
 
   function containsProp(prop, targetObject) {
@@ -93,6 +93,14 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
     });
   }
 
+  function makeConditionalCommand(commandObject, type, value) {
+    commandObject.addCommand({
+      specialCondition: true,
+      type: type,
+      value: value
+    });
+  }
+
   var Results = {
     add: function(sourceObjects, commandRunners) {
       this.sets = Helper.def(this.sets, []);
@@ -180,9 +188,20 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       results.add(sourceObjects, commandRunners);
 
       // TODO: should old command functions be removed (if they exist)?
-      attachCommandFunctions(sourceObjects[0], this); // TODO: investigate need for [0]
+      // TODO: investigate need for [0]
+      // TODO: this isn't right
+      attachCommandFunctions(sourceObjects[0], this);
 
       return this;
+    },
+    instance: function(sourceObject) {
+      var commandRunners, results = sourceObject.results = Obj.clone(Results);
+      commandRunners = createCommandRunners([sourceObject]);
+      results.add([sourceObject], commandRunners);
+      attachCommandFunctions(sourceObject, sourceObject);
+      sourceObject = Obj.merge(CommandObject, sourceObject);
+      sourceObject.sourceIndex = 0;
+      return sourceObject;
     }
   };
 
@@ -254,7 +273,8 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       this.addCommand({
         watchProp: prop,
         lastValue: null, // FIXED... hopefully -- doesn't work because values vary between sourceObjects
-        ands: []
+        ands: [],
+        specials: []
       });
       return this;
     },
@@ -266,42 +286,93 @@ jack2d('FlowObject', ['helper', 'obj', 'CommandRunner'], function(Helper, Obj, C
       return this;
     },
     when: function(prop, value, group) {
-      value = Helper.def(value, true);
+      //value = Helper.def(value, true); // if no value is provided, assume 'true'
       this.addCommand({
         whenProp: prop,
         whenValue: value,
         isFunc: Helper.isFunction(value),
         ands: [],
+        specials: [],
         commands: [],
         group: group
       });
       return this;
     },
+    lessThan: function(value) {
+      makeConditionalCommand(this, '<', value);
+      return this;
+    },
+    lessThanOrEqualTo: function(value) {
+      makeConditionalCommand(this, '<=', value);
+      return this;
+    },
+    greaterThan: function(value) {
+      makeConditionalCommand(this, '>', value);
+      return this;
+    },
+    greaterThanOrEqualTo: function(value) {
+      makeConditionalCommand(this, '>=', value);
+      return this;
+    },
+    equalTo: function(value) {
+      makeConditionalCommand(this, '==', value);
+      return this;
+    },
     whenNot: function(prop) {
       return this.when(prop, false);
     },
-    and: function(prop, value) {
+    /*and: function(prop, value) {
       value = Helper.def(value, true);
       this.addCommand({
         andProp: prop,
         andValue: value,
-        isFunc: Helper.isFunction(value)
+        isFunc: Helper.isFunction(value),
+        specials: []
       });
       return this;
+    },*/
+    andWhen: function(prop, value) {
+      this.addCommand({
+        isLogical: true,
+        logicalProp: prop,
+        logicalValue: value,
+        logicalType: 'and',
+        isFunc: Helper.isFunction(value),
+        specials: []
+      });
+      return this;
+    },
+    and: function() {
+      return this.andWhen();
+    },
+    orWhen: function(prop, value) {
+      this.addCommand({
+        isLogical: true,
+        logicalProp: prop,
+        logicalValue: value,
+        logicalType: 'or',
+        isFunc: Helper.isFunction(value),
+        specials: []
+      });
+      return this;
+    },
+    or: function() {
+      return this.orWhen();
     },
     andNot: function(prop) {
       return this.and(prop, false);
     },
-    set: function(prop, value, inc) {
+    set: function(prop, value, inc, format) {
       this.addCommand({
         setProp: prop,
         setValue: value,
-        inc: inc
+        inc: inc,
+        format: format
       });
       return this;
     },
-    inc: function(prop, value) {
-      this.set(prop, value, true);
+    inc: function(prop, value, format) {
+      this.set(prop, value, true, format);
       return this;
     },
     on: function(eventName) {

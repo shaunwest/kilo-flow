@@ -108,8 +108,17 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       } else if(command.whenProp || command.watchProp) {
         conditional = command;
         conditional.ands.length = 0;
+        conditional.specials.length = 0;
       } else if(conditional && command.andProp) {
         conditional.ands.push(command);
+      } else if(conditional && command.isLogical) {
+        conditional.ands.push(command);
+      } else if(conditional && command.specialCondition) {
+        if(conditional.ands.length > 0) {
+          conditional.ands[conditional.ands.length - 1].specials.push(command);
+        } else {
+          conditional.specials.push(command);
+        }
       } else if(groupConditional) {
         if(this.evaluateConditional(groupConditional)) {
           if(conditional && this.evaluateConditional(conditional)) {
@@ -139,8 +148,19 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     var context = this.context;
     if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
-      conditional.whenProp && (context[conditional.whenProp] === conditional.whenValue)) {
-      return !(conditional.ands && !this.evaluateAnd(conditional.ands, context));
+      //conditional.whenProp && conditional.whenValue && (context[conditional.whenProp] === conditional.whenValue) ||
+      conditional.whenProp && Helper.isDefined(context[conditional.whenProp])
+    ) {
+      if(conditional.specials.length > 0 && !this.evaluateSpecials(conditional.specials, conditional.whenProp)) {
+        return false;
+      }
+      /*if(conditional.ands.length > 0 && !this.evaluateAnd(conditional.ands, context)) { // TODO: get rid of context
+        return false;
+      }*/
+      if(conditional.ands.length > 0 && !this.evaluateLogical(conditional.ands, conditional.whenProp || conditional.watchProp)) {
+        return false;
+      }
+      return true;
     }
     return false;
   };
@@ -155,18 +175,106 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
           return false;
         }
       } else {
-        if(context[and.andProp] !== and.andValue) {
+        //if(context[and.andProp] !== and.andValue) {
+        if(!Helper.isDefined(context[and.andProp])) {
           return false;
         }
+      }
+
+      if(and.specials.length > 0 && !this.evaluateSpecials(and.specials, and.andProp)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp) {
+    var numLogicals, logical, logicalType, i;
+    var logicState = false;
+    var context = this.context;
+
+    for(i = 0, numLogicals = logicals.length; i < numLogicals; i++) {
+      logical = logicals[i];
+      logicalType = logical.logicalType;
+      logicalProp = logical.logicalProp || logicalProp;
+      console.log(logicalProp);
+      if(logical.isFunc) {
+        if(logical.logicalValue(context[logicalProp])) {
+          if(logicalType === 'and') {
+            logicState = true;
+          } else {
+            return true;
+          }
+        } else {
+          logicState = false;
+        }
+      } else {
+        if(Helper.isDefined(context[logicalProp])) {
+          if(logicalType === 'and') {
+            logicState = true;
+          } else {
+            return true;
+          }
+        } else {
+          logicState = false;
+        }
+      }
+
+      if(logical.specials.length > 0 && this.evaluateSpecials(logical.specials, logicalProp)) {
+        if(logicalType === 'and') {
+          logicState = true;
+        } else {
+          return true;
+        }
+      } else {
+        logicState = false;
+      }
+    }
+    return logicState;
+  };
+
+  CommandRunner.prototype.evaluateSpecials = function(specials, conditionalProp) {
+    var numSpecials, special, i;
+    var context = this.context;
+
+    for(i = 0, numSpecials = specials.length; i < numSpecials; i++) {
+      special = specials[i];
+      switch(special.type) {
+        case '<':
+          if(context[conditionalProp] >= special.value) {
+            return false;
+          }
+          break;
+        case '<=':
+          if(context[conditionalProp] > special.value) {
+            return false;
+          }
+          break;
+        case '>':
+          if(context[conditionalProp] <= special.value) {
+            return false;
+          }
+          break;
+        case '>=':
+          if(context[conditionalProp] < special.value) {
+            return false;
+          }
+          break;
+        case '==':
+          if(context[conditionalProp] !== special.value) {
+            return false;
+          }
+          break;
+        default: // do nothing
       }
     }
     return true;
   };
 
   CommandRunner.prototype.executeCommand = function(command) {
-    var context = this.context, result, prop, args;
+    var context = this.context, result, prop, propVal;
 
-    if(command.complete) {
+    if(command.complete) { // FIXME
       if(this.commandQueue.length === 0) {
         command.func.apply(command); //, command.args);
       } else {
@@ -184,10 +292,26 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
-        if(!command.context[prop]) {
-          command.context[prop] = 0;
+        if(command.format === 'px') {
+          if(!command.context[prop]) {
+            command.context[prop] = command.setValue + 'px';
+          } else {
+            propVal = command.context[prop];
+            command.context[prop] = parseInt(propVal) + command.setValue + 'px';
+          }
+        } else if(command.format === '%') {
+          if(!command.context[prop]) {
+            command.context[prop] = command.setValue + '%';
+          } else {
+            propVal = command.context[prop];
+            command.context[prop] = parseInt(propVal) + command.setValue + '%';
+          }
+        } else {
+          if(!command.context[prop]) {
+            command.context[prop] = command.setValue;
+          }
+          command.context[prop] += command.setValue;
         }
-        command.context[prop] += command.setValue;
       } else {
         command.context[prop] = command.setValue;
       }
