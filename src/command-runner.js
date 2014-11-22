@@ -2,8 +2,7 @@
  * Created by Shaun on 9/11/14.
  */
 
-// Got rid of 'commandQueue'. Command Runners no longer wait for promises.
-jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
+kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   'use strict';
 
   function getLastObject(obj, propStr) {
@@ -65,14 +64,14 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     var repeatQueue = [];
 
     if(this.chronoId) {
-      Chrono.registerAfter(this.chronoId, function() {
+      Scheduler.registerAfter(this.chronoId, function() {
         this.processRepeatCommands(repeatQueue);
-      }.bind(this), Helper.getGID('command-repeat'));
+      }.bind(this), Util.getGID('command-repeat'));
 
     } else {
-      Chrono.register(function() {
+      Scheduler.register(function() {
         this.processRepeatCommands(repeatQueue);
-      }.bind(this), Helper.getGID('command-repeat'));
+      }.bind(this), Util.getGID('command-repeat'));
     }
 
     return repeatQueue;
@@ -93,6 +92,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     return eventQueue;
   };
 
+
   CommandRunner.prototype.processRepeatCommands = function(commandQueue) {
     var numCommands, command, conditional = null,
       groupConditional = null, i = 0;
@@ -107,18 +107,17 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
         groupConditional = null;
       } else if(command.whenProp || command.watchProp) {
         conditional = command;
-        conditional.ands.length = 0;
+        conditional.logicals.length = 0;
         conditional.specials.length = 0;
-      } else if(conditional && command.andProp) {
-        conditional.ands.push(command);
       } else if(conditional && command.isLogical) {
-        conditional.ands.push(command);
+        conditional.logicals.push(command);
       } else if(conditional && command.specialCondition) {
-        if(conditional.ands.length > 0) {
-          conditional.ands[conditional.ands.length - 1].specials.push(command);
+        if(conditional.logicals.length > 0) {
+          conditional.logicals[conditional.logicals.length - 1].specials.push(command);
         } else {
           conditional.specials.push(command);
         }
+        //conditional.specials.push(command);
       } else if(groupConditional) {
         if(this.evaluateConditional(groupConditional)) {
           if(conditional && this.evaluateConditional(conditional)) {
@@ -149,23 +148,20 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
     if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
       //conditional.whenProp && conditional.whenValue && (context[conditional.whenProp] === conditional.whenValue) ||
-      conditional.whenProp && Helper.isDefined(context[conditional.whenProp])
+      conditional.whenProp && !conditional.isFunc && Util.isDefined(context[conditional.whenProp])
     ) {
-      if(conditional.specials.length > 0 && !this.evaluateSpecials(conditional.specials, conditional.whenProp)) {
+      /*if(conditional.specials.length > 0 && !this.evaluateSpecials(conditional.specials, conditional.whenProp)) {
         return false;
       }
-      /*if(conditional.ands.length > 0 && !this.evaluateAnd(conditional.ands, context)) { // TODO: get rid of context
+      if(conditional.logicals.length > 0 && !this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp)) {
         return false;
       }*/
-      if(conditional.ands.length > 0 && !this.evaluateLogical(conditional.ands, conditional.whenProp || conditional.watchProp)) {
-        return false;
-      }
       return true;
     }
     return false;
   };
 
-  CommandRunner.prototype.evaluateAnd = function(ands) {
+  /*CommandRunner.prototype.evaluateAnd = function(ands) {
     var numAnds, context = this.context, and, i;
     numAnds = ands.length;
     for(i = 0; i < numAnds; i++) {
@@ -176,7 +172,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
         }
       } else {
         //if(context[and.andProp] !== and.andValue) {
-        if(!Helper.isDefined(context[and.andProp])) {
+        if(!Util.isDefined(context[and.andProp])) {
           return false;
         }
       }
@@ -186,7 +182,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       }
     }
     return true;
-  };
+  };*/
 
   CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp) {
     var numLogicals, logical, logicalType, i;
@@ -197,7 +193,6 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
       logical = logicals[i];
       logicalType = logical.logicalType;
       logicalProp = logical.logicalProp || logicalProp;
-      console.log(logicalProp);
       if(logical.isFunc) {
         if(logical.logicalValue(context[logicalProp])) {
           if(logicalType === 'and') {
@@ -209,7 +204,7 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
           logicState = false;
         }
       } else {
-        if(Helper.isDefined(context[logicalProp])) {
+        if(Util.isDefined(context[logicalProp])) {
           if(logicalType === 'and') {
             logicState = true;
           } else {
@@ -235,40 +230,35 @@ jack2d('CommandRunner', ['helper', 'chrono'], function(Helper, Chrono) {
 
   CommandRunner.prototype.evaluateSpecials = function(specials, conditionalProp) {
     var numSpecials, special, i;
+    var logicState = false;
     var context = this.context;
 
     for(i = 0, numSpecials = specials.length; i < numSpecials; i++) {
       special = specials[i];
+      if(special.logicMode === 'or' && logicState) {
+        return true;
+      }
       switch(special.type) {
         case '<':
-          if(context[conditionalProp] >= special.value) {
-            return false;
-          }
+          logicState = (context[conditionalProp] < special.value);
           break;
         case '<=':
-          if(context[conditionalProp] > special.value) {
-            return false;
-          }
+          logicState = (context[conditionalProp] <= special.value);
           break;
         case '>':
-          if(context[conditionalProp] <= special.value) {
-            return false;
-          }
+          logicState = (context[conditionalProp] > special.value);
           break;
         case '>=':
-          if(context[conditionalProp] < special.value) {
-            return false;
-          }
+          logicState = (context[conditionalProp] >= special.value);
           break;
         case '==':
-          if(context[conditionalProp] !== special.value) {
-            return false;
-          }
+          logicState = (context[conditionalProp] == special.value);
           break;
         default: // do nothing
       }
+
     }
-    return true;
+    return logicState;
   };
 
   CommandRunner.prototype.executeCommand = function(command) {

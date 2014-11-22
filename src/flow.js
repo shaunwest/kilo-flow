@@ -2,8 +2,7 @@
  * Created by Shaun on 9/7/14.
  */
 
-jack2d('Flow', ['helper', 'obj', 'FlowObject'],
-function(Helper, Obj, FlowObject) {
+kilo('Flow', ['Util', 'Obj', 'FlowObject'], function(Util, Obj, FlowObject) {
   'use strict';
 
   function Flow(sourceObject, count, hookId) {
