@@ -25,13 +25,6 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
 
   function makeCommandFunction(commandObject, func) {
     return function() {
-      /*var args = Util.argsToArray(arguments);
-       commandObject.addCommand({
-       func: func,
-       args: args
-       });
-
-       return commandObject;*/
       return commandObject.call(func);
     };
   }
@@ -53,8 +46,6 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       delete commandObject[prop];
     });
   }
-
-
 
   function processSourceObjects(sourceObjects, count) {
     var i, processedObjects = [];
@@ -120,7 +111,7 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     watch: function() {
       return flowAlias(this.flow(), 'watch', arguments);
     },
-    flow: function(hookId) {
+    /*flow: function(hookId) {
       var commandRunners, chronoId;
       var commandObject = Obj.create(CommandObject);
       var results = commandObject.results = Obj.clone(Results);
@@ -138,8 +129,8 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       attachCommandFunctions(this, commandObject);
 
       return commandObject;
-    },
-    source: function(sourceObjects, count, hookId, results) {
+    },*/
+    /*source: function(sourceObjects, count, hookId, results) {
       var commandRunners;
 
       results = this.results = results || Obj.clone(Results);
@@ -154,15 +145,14 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       // TODO: this isn't right
       attachCommandFunctions(sourceObjects[0], this);
       return this;
+    },*/
+    flow: function(hookId) {
+      return this.instance(this, hookId);
     },
     instance: function(sourceObject, hookId) {
       var flowInstance = Obj.merge(CommandObject);
       flowInstance.commandRunner = new CommandRunner(sourceObject, hookId);
       attachCommandFunctions(sourceObject, flowInstance);
-      flowInstance.or = Obj.clone(flowInstance);
-      flowInstance.or.logicMode = 'or';
-      flowInstance.and = Obj.clone(flowInstance);
-      flowInstance.and.logicMode = 'and';
       return flowInstance;
     }
   };

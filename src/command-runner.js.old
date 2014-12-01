@@ -108,8 +108,16 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
       } else if(command.whenProp || command.watchProp) {
         conditional = command;
         conditional.logicals.length = 0;
+        conditional.specials.length = 0;
       } else if(conditional && command.isLogical) {
         conditional.logicals.push(command);
+      } else if(conditional && command.specialCondition) {
+        if(conditional.logicals.length > 0) {
+          conditional.logicals[conditional.logicals.length - 1].specials.push(command);
+        } else {
+          conditional.specials.push(command);
+        }
+        //conditional.specials.push(command);
       } else if(groupConditional) {
         if(this.evaluateConditional(groupConditional)) {
           if(conditional && this.evaluateConditional(conditional)) {
@@ -137,24 +145,48 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
 
   CommandRunner.prototype.evaluateConditional = function(conditional) {
     var context = this.context;
-    if((conditional.isFunc && conditional.whenValue.call(context, context[conditional.whenProp])) ||
+    if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
-      conditional.whenProp && Util.isDefined(conditional.whenValue) && (context[conditional.whenProp] === conditional.whenValue) ||
-      conditional.whenProp && !Util.isDefined(conditional.whenValue) && Util.isDefined(context[conditional.whenProp])
+      //conditional.whenProp && conditional.whenValue && (context[conditional.whenProp] === conditional.whenValue) ||
+      conditional.whenProp && !conditional.isFunc && Util.isDefined(context[conditional.whenProp])
     ) {
-      if(conditional.logicals.length > 0) {
-        return this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp, true);
+      /*if(conditional.specials.length > 0 && !this.evaluateSpecials(conditional.specials, conditional.whenProp)) {
+        return false;
       }
+      if(conditional.logicals.length > 0 && !this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp)) {
+        return false;
+      }*/
       return true;
-    }
-    if(conditional.logicals.length > 0) {
-      return this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp, false);
     }
     return false;
   };
 
-  CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp, logicState) {
+  /*CommandRunner.prototype.evaluateAnd = function(ands) {
+    var numAnds, context = this.context, and, i;
+    numAnds = ands.length;
+    for(i = 0; i < numAnds; i++) {
+      and = ands[i];
+      if(and.isFunc) {
+        if(!and.andValue(context[and.andProp])) {
+          return false;
+        }
+      } else {
+        //if(context[and.andProp] !== and.andValue) {
+        if(!Util.isDefined(context[and.andProp])) {
+          return false;
+        }
+      }
+
+      if(and.specials.length > 0 && !this.evaluateSpecials(and.specials, and.andProp)) {
+        return false;
+      }
+    }
+    return true;
+  };*/
+
+  CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp) {
     var numLogicals, logical, logicalType, i;
+    var logicState = false;
     var context = this.context;
 
     for(i = 0, numLogicals = logicals.length; i < numLogicals; i++) {
@@ -162,22 +194,69 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
       logicalType = logical.logicalType;
       logicalProp = logical.logicalProp || logicalProp;
       if(logical.isFunc) {
-        if(logical.logicalValue.call(context, context[logicalProp])) {
-          if(logicalType === 'or') {
+        if(logical.logicalValue(context[logicalProp])) {
+          if(logicalType === 'and') {
+            logicState = true;
+          } else {
             return true;
           }
-        } else if(logicalType === 'and') {
+        } else {
           logicState = false;
         }
       } else {
         if(Util.isDefined(context[logicalProp])) {
-          if(logicalType === 'or') {
+          if(logicalType === 'and') {
+            logicState = true;
+          } else {
             return true;
           }
-        } else if(logicalType === 'and') {
+        } else {
           logicState = false;
         }
       }
+
+      if(logical.specials.length > 0 && this.evaluateSpecials(logical.specials, logicalProp)) {
+        if(logicalType === 'and') {
+          logicState = true;
+        } else {
+          return true;
+        }
+      } else {
+        logicState = false;
+      }
+    }
+    return logicState;
+  };
+
+  CommandRunner.prototype.evaluateSpecials = function(specials, conditionalProp) {
+    var numSpecials, special, i;
+    var logicState = false;
+    var context = this.context;
+
+    for(i = 0, numSpecials = specials.length; i < numSpecials; i++) {
+      special = specials[i];
+      if(special.logicMode === 'or' && logicState) {
+        return true;
+      }
+      switch(special.type) {
+        case '<':
+          logicState = (context[conditionalProp] < special.value);
+          break;
+        case '<=':
+          logicState = (context[conditionalProp] <= special.value);
+          break;
+        case '>':
+          logicState = (context[conditionalProp] > special.value);
+          break;
+        case '>=':
+          logicState = (context[conditionalProp] >= special.value);
+          break;
+        case '==':
+          logicState = (context[conditionalProp] == special.value);
+          break;
+        default: // do nothing
+      }
+
     }
     return logicState;
   };

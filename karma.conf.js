@@ -15,11 +15,11 @@ module.exports = function(config) {
 
     // list of files / patterns to load in the browser
     files: [
-      'bower_components/kilo-core/src/*.js',
-      'bower_components/kilo-sup/src/*.js',
-      'bower_components/kilo-scheduler/src/*.js',
+      'bower_components/kilo-core/src/**/*.js',
+      'bower_components/kilo-sup/src/**/*.js',
+      'bower_components/kilo-scheduler/src/**/*.js',
       'src/**/*.js',
-      'test/**/*.spec.js'
+      'test/**/*.js'
     ],
 
 

@@ -5,6 +5,15 @@
 kilo('CommandObject', ['Util'], function(Util) {
   'use strict';
 
+  function addConditionalCommand(context, type, value) {
+    return addCommand(context, {
+      specialCondition: true,
+      logicMode: context.logicMode,
+      type: type,
+      value: value
+    });
+  }
+
   function addCommand(context, commandConfig) {
     context.commandRunner.add(commandConfig);
     return context;
@@ -51,6 +60,26 @@ kilo('CommandObject', ['Util'], function(Util) {
       commands: [],
       group: group
     });
+  }
+
+  function lessThan(value) {
+    return addConditionalCommand(this, '<', value);
+  }
+
+  function lessThanOrEqualTo(value) {
+    return addConditionalCommand(this, '<=', value);
+  }
+
+  function greaterThan(value) {
+    return addConditionalCommand(this, '>', value);
+  }
+
+  function greaterThanOrEqualTo(value) {
+    return addConditionalCommand(this, '>=', value);
+  }
+
+  function equalTo(value) {
+    return addConditionalCommand(this, '==', value);
   }
 
   function whenNot(prop) {
@@ -106,12 +135,19 @@ kilo('CommandObject', ['Util'], function(Util) {
     });
   }
 
-  function source() {
-    return this.commandRunner.context;
-  }
-
   return {
+    /*and: function() {
+      return this.andWhen();
+    },*/
+    /*or: function() {
+      return this.orWhen();
+    },*/
+    /*andNot: function(prop) {
+      return this.and(prop, false);
+    },*/
     commandRunner: null,
+    or: null,
+    and: null,
     logicMode: '',
     done: done,
     get: get,
@@ -119,13 +155,17 @@ kilo('CommandObject', ['Util'], function(Util) {
     whenGroup: whenGroup,
     endGroup: endGroup,
     when: when,
+    lessThan: lessThan,
+    lessThanOrEqualTo: lessThanOrEqualTo,
+    greaterThan: greaterThan,
+    greaterThanOrEqualTo: greaterThanOrEqualTo,
+    equalTo: equalTo,
     whenNot: whenNot,
     andWhen: andWhen,
     orWhen: orWhen,
     set: set,
     inc: inc,
     on: on,
-    call: call,
-    source: source
+    call: call
   };
 });

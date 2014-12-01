@@ -5,7 +5,7 @@
 var kilo = (function(id) {
   'use strict';
 
-  var core, Util, Injector, appConfig = {}, gids = {}, allElements, previousOwner = undefined;
+  var core, Util, Injector, appConfig = {}, gids = {}, elementMap = {}, previousOwner = undefined;
   var CONSOLE_ID = id;
 
   Util = {
@@ -30,7 +30,7 @@ var kilo = (function(id) {
   };
 
   ['Array', 'Object', 'Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp', 'HTMLImageElement'].
-    forEach(function(name) {
+    forEach(function(name) { // TODO: don't use forEach
       Util['is' + name] = function(obj) {
         return Object.prototype.toString.call(obj) === '[object ' + name + ']';
       };
@@ -102,11 +102,11 @@ var kilo = (function(id) {
   function onDocumentReady(onReady) {
     var readyStateCheckInterval;
     if (document.readyState === 'complete') {
-      onReady();
+      onReady(document);
     } else {
       readyStateCheckInterval = setInterval(function () {
         if (document.readyState === 'complete') {
-          onReady();
+          onReady(document);
           clearInterval(readyStateCheckInterval);
         }
       }, 10);
@@ -115,9 +115,15 @@ var kilo = (function(id) {
 
   /** the main interface */
   core = function(keyOrDeps, depsOrFunc, funcOrScope, scope) {
+    var result;
     // get dependencies
     if(Util.isArray(keyOrDeps)) {
-      Injector.resolveAndApply(keyOrDeps, depsOrFunc, funcOrScope);
+      result = Injector.resolveAndApply(keyOrDeps, depsOrFunc, funcOrScope);
+      if(Util.isObject(result)) {
+        Object.keys(result).forEach(function(key) { // TODO: don't use Object.keys
+          Injector.setModule(key, result[key]);
+        });
+      }
 
     // register a new module (with dependencies)
     } else if(Util.isArray(depsOrFunc) && Util.isFunction(funcOrScope)) {
@@ -142,7 +148,59 @@ var kilo = (function(id) {
     window[id] = previousOwner;
     return core;
   };
+
+  function findElement(elementId, elements, cb) {
+    var i, numElements, selectedElement;
+
+    for(i = 0, numElements = elements.length; i < numElements; i++) {
+      selectedElement = elements[i];
+      if(selectedElement.hasAttribute('data-' + elementId)) {
+        if(!elementMap[elementId]) {
+          elementMap[elementId] = [];
+        }
+        elementMap[elementId].push(selectedElement);
+        cb(selectedElement);
+      }
+    }
+  }
+
+  function executeElement(elementId, elements, deps, func, parentElement) {
+    findElement(elementId, elements, function(element) {
+      if(deps) {
+        func.apply(element, Injector.resolve(deps));
+      } else {
+        func.call(element, parentElement);
+      }
+    });
+  }
+
+  // TODO: decide if element() will be moved to new package (kilo-element)
   core.element = function(elementId, funcOrDeps, func) {
+    var deps, allElements;
+
+    if(Util.isFunction(funcOrDeps)) {
+      func = funcOrDeps;
+    } else if(Util.isArray(funcOrDeps)) {
+      deps = funcOrDeps;
+    } else {
+      Util.error('element: second argument should be function or dependency array.');
+    }
+
+    onDocumentReady(function(document) {
+      var body;
+      if(!allElements) {
+        body = document.getElementsByTagName('body');
+        if(!body || !body[0]) {
+          return;
+        }
+        allElements = body[0].querySelectorAll('*');
+      }
+      executeElement(elementId, allElements, deps, func);
+    });
+
+    return this;
+  };
+  core.childElement = function(parentId, elementId, funcOrDeps, func) {
     var deps;
 
     if(Util.isFunction(funcOrDeps)) {
@@ -154,25 +212,12 @@ var kilo = (function(id) {
     }
 
     onDocumentReady(function() {
-      var i, body, numElements, selectedElement;
-
-      if(!allElements) {
-        body = document.getElementsByTagName('body');
-        if(!body || !body[0]) {
-          return;
-        }
-        allElements = body[0].querySelectorAll('*');
-      }
-
-      for(i = 0, numElements = allElements.length; i < numElements; i++) {
-        selectedElement = allElements[i];
-        if(selectedElement.hasAttribute('data-' + elementId) || selectedElement.hasAttribute(elementId)){
-          if(deps) {
-            func.apply(selectedElement, Injector.resolve(deps));
-          } else {
-            func.call(selectedElement);
-          }
-        }
+      var i, elements, numParents, parentElement;
+      var parentElements = elementMap[parentId];
+      for(i = 0, numParents = parentElements.length; i < numParents; i++) {
+        parentElement = parentElements[i];
+        elements = parentElement.querySelectorAll('*');
+        executeElement(elementId, elements, deps, func, parentElement);
       }
     });
 
@@ -259,8 +304,20 @@ kilo('Func', [], function() {
     return partial(wrapper, f);
   }
 
+  function fastPartial(f) {
+    return function() {
+      var boundArgs =  Array.prototype.slice.call(arguments);
+      var lastIndex = boundArgs.length;
+      return function(val) {
+        boundArgs[lastIndex] = val;
+        return f.apply(this, boundArgs);
+      };
+    };
+  }
+
   return {
     partial: partial,
+    fastPartial: fastPartial,
     wrap: wrap
   };
 });
@@ -936,15 +993,6 @@ kilo('Scheduler', ['HashArray', 'Util'], function(HashArray, Util) {
 kilo('CommandObject', ['Util'], function(Util) {
   'use strict';
 
-  function addConditionalCommand(context, type, value) {
-    return addCommand(context, {
-      specialCondition: true,
-      logicMode: context.logicMode,
-      type: type,
-      value: value
-    });
-  }
-
   function addCommand(context, commandConfig) {
     context.commandRunner.add(commandConfig);
     return context;
@@ -991,26 +1039,6 @@ kilo('CommandObject', ['Util'], function(Util) {
       commands: [],
       group: group
     });
-  }
-
-  function lessThan(value) {
-    return addConditionalCommand(this, '<', value);
-  }
-
-  function lessThanOrEqualTo(value) {
-    return addConditionalCommand(this, '<=', value);
-  }
-
-  function greaterThan(value) {
-    return addConditionalCommand(this, '>', value);
-  }
-
-  function greaterThanOrEqualTo(value) {
-    return addConditionalCommand(this, '>=', value);
-  }
-
-  function equalTo(value) {
-    return addConditionalCommand(this, '==', value);
   }
 
   function whenNot(prop) {
@@ -1066,19 +1094,12 @@ kilo('CommandObject', ['Util'], function(Util) {
     });
   }
 
+  function source() {
+    return this.commandRunner.context;
+  }
+
   return {
-    /*and: function() {
-      return this.andWhen();
-    },*/
-    /*or: function() {
-      return this.orWhen();
-    },*/
-    /*andNot: function(prop) {
-      return this.and(prop, false);
-    },*/
     commandRunner: null,
-    or: null,
-    and: null,
     logicMode: '',
     done: done,
     get: get,
@@ -1086,18 +1107,14 @@ kilo('CommandObject', ['Util'], function(Util) {
     whenGroup: whenGroup,
     endGroup: endGroup,
     when: when,
-    lessThan: lessThan,
-    lessThanOrEqualTo: lessThanOrEqualTo,
-    greaterThan: greaterThan,
-    greaterThanOrEqualTo: greaterThanOrEqualTo,
-    equalTo: equalTo,
     whenNot: whenNot,
     andWhen: andWhen,
     orWhen: orWhen,
     set: set,
     inc: inc,
     on: on,
-    call: call
+    call: call,
+    source: source
   };
 });
 
@@ -1211,16 +1228,8 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
       } else if(command.whenProp || command.watchProp) {
         conditional = command;
         conditional.logicals.length = 0;
-        conditional.specials.length = 0;
       } else if(conditional && command.isLogical) {
         conditional.logicals.push(command);
-      } else if(conditional && command.specialCondition) {
-        if(conditional.logicals.length > 0) {
-          conditional.logicals[conditional.logicals.length - 1].specials.push(command);
-        } else {
-          conditional.specials.push(command);
-        }
-        //conditional.specials.push(command);
       } else if(groupConditional) {
         if(this.evaluateConditional(groupConditional)) {
           if(conditional && this.evaluateConditional(conditional)) {
@@ -1248,48 +1257,24 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
 
   CommandRunner.prototype.evaluateConditional = function(conditional) {
     var context = this.context;
-    if((conditional.isFunc && conditional.whenValue(context[conditional.whenProp])) ||
+    if((conditional.isFunc && conditional.whenValue.call(context, context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
-      //conditional.whenProp && conditional.whenValue && (context[conditional.whenProp] === conditional.whenValue) ||
-      conditional.whenProp && !conditional.isFunc && Util.isDefined(context[conditional.whenProp])
+      conditional.whenProp && Util.isDefined(conditional.whenValue) && (context[conditional.whenProp] === conditional.whenValue) ||
+      conditional.whenProp && !Util.isDefined(conditional.whenValue) && Util.isDefined(context[conditional.whenProp])
     ) {
-      /*if(conditional.specials.length > 0 && !this.evaluateSpecials(conditional.specials, conditional.whenProp)) {
-        return false;
+      if(conditional.logicals.length > 0) {
+        return this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp, true);
       }
-      if(conditional.logicals.length > 0 && !this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp)) {
-        return false;
-      }*/
       return true;
+    }
+    if(conditional.logicals.length > 0) {
+      return this.evaluateLogical(conditional.logicals, conditional.whenProp || conditional.watchProp, false);
     }
     return false;
   };
 
-  /*CommandRunner.prototype.evaluateAnd = function(ands) {
-    var numAnds, context = this.context, and, i;
-    numAnds = ands.length;
-    for(i = 0; i < numAnds; i++) {
-      and = ands[i];
-      if(and.isFunc) {
-        if(!and.andValue(context[and.andProp])) {
-          return false;
-        }
-      } else {
-        //if(context[and.andProp] !== and.andValue) {
-        if(!Util.isDefined(context[and.andProp])) {
-          return false;
-        }
-      }
-
-      if(and.specials.length > 0 && !this.evaluateSpecials(and.specials, and.andProp)) {
-        return false;
-      }
-    }
-    return true;
-  };*/
-
-  CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp) {
+  CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp, logicState) {
     var numLogicals, logical, logicalType, i;
-    var logicState = false;
     var context = this.context;
 
     for(i = 0, numLogicals = logicals.length; i < numLogicals; i++) {
@@ -1297,69 +1282,22 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
       logicalType = logical.logicalType;
       logicalProp = logical.logicalProp || logicalProp;
       if(logical.isFunc) {
-        if(logical.logicalValue(context[logicalProp])) {
-          if(logicalType === 'and') {
-            logicState = true;
-          } else {
+        if(logical.logicalValue.call(context, context[logicalProp])) {
+          if(logicalType === 'or') {
             return true;
           }
-        } else {
+        } else if(logicalType === 'and') {
           logicState = false;
         }
       } else {
         if(Util.isDefined(context[logicalProp])) {
-          if(logicalType === 'and') {
-            logicState = true;
-          } else {
+          if(logicalType === 'or') {
             return true;
           }
-        } else {
+        } else if(logicalType === 'and') {
           logicState = false;
         }
       }
-
-      if(logical.specials.length > 0 && this.evaluateSpecials(logical.specials, logicalProp)) {
-        if(logicalType === 'and') {
-          logicState = true;
-        } else {
-          return true;
-        }
-      } else {
-        logicState = false;
-      }
-    }
-    return logicState;
-  };
-
-  CommandRunner.prototype.evaluateSpecials = function(specials, conditionalProp) {
-    var numSpecials, special, i;
-    var logicState = false;
-    var context = this.context;
-
-    for(i = 0, numSpecials = specials.length; i < numSpecials; i++) {
-      special = specials[i];
-      if(special.logicMode === 'or' && logicState) {
-        return true;
-      }
-      switch(special.type) {
-        case '<':
-          logicState = (context[conditionalProp] < special.value);
-          break;
-        case '<=':
-          logicState = (context[conditionalProp] <= special.value);
-          break;
-        case '>':
-          logicState = (context[conditionalProp] > special.value);
-          break;
-        case '>=':
-          logicState = (context[conditionalProp] >= special.value);
-          break;
-        case '==':
-          logicState = (context[conditionalProp] == special.value);
-          break;
-        default: // do nothing
-      }
-
     }
     return logicState;
   };
@@ -1433,35 +1371,41 @@ kilo('FlowDefinition', ['helper', 'obj', 'FlowObject'], function(Helper, Obj, Fl
  * Created by Shaun on 11/18/2014.
  */
 
-kilo('FlowFunc', ['Util'], function(Util) {
+kilo(['Func'], function(Func) {
   'use strict';
 
-  function containsProp(prop, targetObject) {
-    return (Object.keys(targetObject).indexOf(prop) !== -1); // TODO: add indexOf polyfill
-  }
-
-  function attachCommandFunction(funcName, func, destinationObject) {
-    // add to command runner
-  }
-
-  // attach "queued" function calls
+  // Hmmm... these aren't initialized when they're needed... they're initialized immediately when this
+  // containing function executes... normally we don't want to execute code that might not be
+  // needed, tho these are very small functions and they're pretty fundamental to Flow operations...
   return {
-    attachCommandFunctions: function(sourceObject, destinationObject) {
-      Object.keys(sourceObject).forEach(function (prop) {
-        if (!Util.isFunction(sourceObject[prop]) || containsProp(prop, FlowObject)) {
-          return;
-        }
-
-        if (!destinationObject.__savedFunctions) {
-          destinationObject.__savedFunctions = {};
-        }
-        destinationObject.__savedFunctions[prop] = sourceObject[prop];
-        destinationObject[prop] = attachCommandFunction(prop, sourceObject[prop], destinationObject);
-      });
-    },
-    attachCommandFunction: attachCommandFunction
+    greaterThan: Func.fastPartial(function(compare, val) {
+      return val > compare;
+    }),
+    lessThan: Func.fastPartial(function(compare, val) {
+      return val < compare;
+    }),
+    between: Func.fastPartial(function(compare1, compare2, val) {
+      return (compare1 < val && val < compare2);
+    }),
+    greaterThanOrEqual: Func.fastPartial(function(compare, val) {
+      return val >= compare;
+    }),
+    lessThanOrEqual: Func.fastPartial(function(compare, val) {
+      return val <= compare;
+    }),
+    betweenInclusive: Func.fastPartial(function(compare1, compare2, val) {
+      return (compare1 <= val && val <= compare2);
+    }),
+    outside: Func.fastPartial(function(compare1, compare2, val) {
+      return (val < compare1 && val > compare2);
+    }),
+    and: Func.fastPartial(function() {
+      // val = last arg
+      // for each func, pass in val
+    })
   };
 });
+
 /**
  * Created by Shaun on 8/10/14.
  */
@@ -1489,13 +1433,6 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
 
   function makeCommandFunction(commandObject, func) {
     return function() {
-      /*var args = Util.argsToArray(arguments);
-       commandObject.addCommand({
-       func: func,
-       args: args
-       });
-
-       return commandObject;*/
       return commandObject.call(func);
     };
   }
@@ -1517,8 +1454,6 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       delete commandObject[prop];
     });
   }
-
-
 
   function processSourceObjects(sourceObjects, count) {
     var i, processedObjects = [];
@@ -1584,7 +1519,7 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     watch: function() {
       return flowAlias(this.flow(), 'watch', arguments);
     },
-    flow: function(hookId) {
+    /*flow: function(hookId) {
       var commandRunners, chronoId;
       var commandObject = Obj.create(CommandObject);
       var results = commandObject.results = Obj.clone(Results);
@@ -1602,8 +1537,8 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       attachCommandFunctions(this, commandObject);
 
       return commandObject;
-    },
-    source: function(sourceObjects, count, hookId, results) {
+    },*/
+    /*source: function(sourceObjects, count, hookId, results) {
       var commandRunners;
 
       results = this.results = results || Obj.clone(Results);
@@ -1618,15 +1553,14 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
       // TODO: this isn't right
       attachCommandFunctions(sourceObjects[0], this);
       return this;
+    },*/
+    flow: function(hookId) {
+      return this.instance(this, hookId);
     },
     instance: function(sourceObject, hookId) {
       var flowInstance = Obj.merge(CommandObject);
       flowInstance.commandRunner = new CommandRunner(sourceObject, hookId);
       attachCommandFunctions(sourceObject, flowInstance);
-      flowInstance.or = Obj.clone(flowInstance);
-      flowInstance.or.logicMode = 'or';
-      flowInstance.and = Obj.clone(flowInstance);
-      flowInstance.and.logicMode = 'and';
       return flowInstance;
     }
   };
@@ -1648,6 +1582,30 @@ kilo('Flow', ['Util', 'Obj', 'FlowObject'], function(Util, Obj, FlowObject) {
 
   return Flow;
 });
+
+kilo.flowElement = function(elementId, funcOrDeps, func) {
+  'use strict';
+
+  kilo(['Flow', 'Util'], function(Flow, Util) {
+    var newFunc, newFuncOrDeps;
+
+    if(Util.isFunction(funcOrDeps)) {
+      newFuncOrDeps = function() {
+        funcOrDeps.apply(Flow(this), arguments);
+      };
+
+    } else if(func) {
+      newFuncOrDeps = funcOrDeps;
+      newFunc = function() {
+        func.apply(Flow(this), arguments);
+      };
+    }
+
+    kilo.element(elementId, newFuncOrDeps, newFunc);
+  });
+};
+
+
 /**
  * Created by Shaun on 11/18/2014.
  */
@@ -1688,3 +1646,34 @@ kilo('Results', ['Util'], function(Util) {
     }
   };
 });
+
+/**
+ * Created by Shaun on 7/6/14.
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/bind
+ */
+(function() {
+  'use strict';
+  if (!Function.prototype.bind) {
+    Function.prototype.bind = function (oThis) {
+      if (typeof this !== "function") {
+        // closest thing possible to the ECMAScript 5
+        // internal IsCallable function
+        throw new TypeError("Function.prototype.bind - what is trying to be bound is not callable");
+      }
+
+      var aArgs = Array.prototype.slice.call(arguments, 1),
+        fToBind = this,
+        fNOP = function () {},
+        fBound = function () {
+          return fToBind.apply(this instanceof fNOP && oThis ? this : oThis,
+            aArgs.concat(Array.prototype.slice.call(arguments)));
+        };
+
+      fNOP.prototype = this.prototype;
+      fBound.prototype = new fNOP();
+
+      return fBound;
+    };
+  }
+})();
+

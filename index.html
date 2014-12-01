@@ -4,44 +4,44 @@
   <meta charset="UTF-8">
   <title>Kilo Flow</title>
   <style>
-    .rectangle {
+    .green-rectangle {
       position: absolute;
       width: 200px;
       height: 200px;
       background-color: #00A000;
     }
+    .blue-rectangle {
+      position: absolute;
+      left: 150px;
+      top: 150px;
+      width: 100px;
+      height: 100px;
+      background-color: #0040D0;
+    }
   </style>
   <script src="dist/kilo-flow.js"></script>
   <script>
-    kilo([], function() {
-      'use strict';
-
-      function greaterThan(compare) {
-        return function(val) {
-          return val > compare;
-        }
-      }
-
-      function lessThan(compare) {
-        return function(val) {
-          return val < compare;
-        }
-      }
-
-      kilo.element('rectangle', ['Flow'], function(Flow) {
-        Flow(this)
-          .when('offsetLeft').greaterThan(20).and.lessThan(100)
-          //.when('offsetLeft', lessThan(100))
+    kilo.flowElement('green-rectangle', ['lessThan'], function(lessThan) {
+      this
+        .when('offsetLeft', lessThan(100))
+        .orWhen('offsetWidth', lessThan(201))
           .inc('style.width', 1, '%')
           .inc('style.height', 1, '%')
           .inc('style.top', 2, 'px')
           .inc('style.left', 2, 'px');
-      });
+    });
+
+    kilo.flowElement('blue-rectangle', ['between'], function(between) {
+      this
+        .when('offsetLeft', between(0, 200))
+          .inc('style.top', 2, 'px')
+          .inc('style.left', 2, 'px');
     });
   </script>
 </head>
 <body>
   <h1>Kilo Flow</h1>
-  <div class="rectangle" data-rectangle></div>
+  <div class="green-rectangle" data-green-rectangle></div>
+  <div class="blue-rectangle" data-blue-rectangle></div>
 </body>
 </html>
