@@ -18,30 +18,116 @@
       height: 100px;
       background-color: #0040D0;
     }
+    .red-rectangle {
+      position: absolute;
+      left: 200px;
+      top: 0;
+      width: 150px;
+      height: 150px;
+      background-color: red;
+    }
   </style>
   <script src="dist/kilo-flow.js"></script>
   <script>
-    kilo.flowElement('green-rectangle', ['lessThan'], function(lessThan) {
-      this
-        .when('offsetLeft', lessThan(100))
+    use(['Flow.When', 'Flow.Model'], function(When, Model) {
+      use(['green-rectangle', 'lessThan'], function(greenRectangle, lessThan) {
+        When(greenRectangle, 'offsetLeft', lessThan(100))
         .orWhen('offsetWidth', lessThan(201))
           .inc('style.width', 1, '%')
           .inc('style.height', 1, '%')
           .inc('style.top', 2, 'px')
           .inc('style.left', 2, 'px');
-    });
+      });
 
-    kilo.flowElement('blue-rectangle', ['between'], function(between) {
-      this
-        .when('offsetLeft', between(0, 200))
+      use(['between'], function(between) {
+        When('blue-rectangle', 'offsetLeft', between(0, 200))
           .inc('style.top', 2, 'px')
           .inc('style.left', 2, 'px');
+      });
+
+      use(function() {
+        Model('red-rectangle')
+          .on('$.mousedown')
+            .set('active', true)
+          .on('$.mouseup')
+            .set('active', false)
+          .when('active', true)
+            .call(function() { console.log('hello'); });
+      });
     });
+
+    /*use(['Element', 'FlowElement'], function(Element, FlowElement) {
+      'use strict';
+
+      Element('green-rectangle', ['Flow.When', 'lessThan'], function(When, lessThan) {
+        When(this, 'offsetLeft', lessThan(100))
+        .orWhen('offsetWidth', lessThan(201))
+          .inc('style.width', 1, '%')
+          .inc('style.height', 1, '%')
+          .inc('style.top', 2, 'px')
+          .inc('style.left', 2, 'px');
+      });
+
+      FlowElement('blue-rectangle', ['between'], function(between) {
+        this
+          .when('offsetLeft', between(0, 200))
+            .inc('style.top', 2, 'px')
+            .inc('style.left', 2, 'px');
+      });
+
+      FlowElement('red-rectangle', function() {
+        this
+          .on('mousedown')
+          .set('active', true)
+          .on('mouseup')
+          .set('active', false)
+          .when('active', true)
+          .call(function() { console.log('hello'); });
+      });
+    });*/
   </script>
+ <!--
+      // Register namespace?
+      register('charactersNamespace', myCharacter', [], function...);
+
+      // use Element
+      use(['blue-rectangle'], function(BlueRectangle) {
+        BlueRectangle.style.top = '2px';
+      });
+
+      // Register an instance (this will be a singleton essentially)
+      register('myCharacter', ['Character', 'Clone'], function(Character, Clone) {
+        return Clone(Character);  
+      });
+
+      // Then refer to the instance directly in Flow commands
+      LeftControlElement
+        .on('mousedown')
+        .set('myCharacter', 'left', true);
+        .on('mouseup')
+        .set('myCharacter', 'left', false;
+
+      Window
+      .on('keypress').event('keyCode', 37) //left
+      .Flow(Character).left = true;
+
+
+      RightControlElement
+        -> Character Right
+
+
+      Key Left
+        -> Character Left
+
+      Key Right
+        -> Character Right
+
+    -->  
 </head>
 <body>
   <h1>Kilo Flow</h1>
   <div class="green-rectangle" data-green-rectangle></div>
   <div class="blue-rectangle" data-blue-rectangle></div>
+  <div class="red-rectangle" data-red-rectangle></div>
 </body>
 </html>

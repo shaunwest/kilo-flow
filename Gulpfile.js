@@ -10,6 +10,12 @@ var karma = require('karma').server;
 var runSequence = require('run-sequence');
 var clean = require('gulp-clean');
 var karmaConfig = __dirname + '/karma.conf.js';
+var jsSources = [
+  'bower_components/kilo-core/src/kilo-core.js',
+  'bower_components/kilo-sup/src/**/*.js',
+  'bower_components/kilo-scheduler/src/**/*.js',
+  'src/**/*.js'
+];
 
 gulp.task('clean', function() {
   return gulp.src('dist', {read: false})
@@ -17,13 +23,13 @@ gulp.task('clean', function() {
 });
 
 gulp.task('build', function() {
-  return gulp.src(
-    [
-      'bower_components/kilo-core/src/kilo-core.js',
-      'bower_components/kilo-sup/src/**/*.js',
-      'bower_components/kilo-scheduler/src/**/*.js',
-      'src/**/*.js'
-    ])
+  return gulp.src(jsSources)
+    .pipe(concat('kilo-flow.js'))
+    .pipe(gulp.dest('dist'));
+});
+
+gulp.task('build-prod', function() {
+  return gulp.src(jsSources)
     .pipe(concat('kilo-flow.js'))
     .pipe(gulp.dest('dist'))
     .pipe(uglify())
@@ -51,4 +57,8 @@ gulp.task('ci', function(cb) {
 gulp.task('default', function(cb) {
   //runSequence('test', 'clean', 'build', 'watch', cb);
   runSequence('clean', 'build', 'watch', cb);
+});
+
+gulp.task('prod', function(cb) {
+  runSequence('test', 'clean', 'prod-build', cb);
 });

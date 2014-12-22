@@ -2,7 +2,7 @@
  * Created by Shaun on 11/18/2014.
  */
 
-kilo('CommandObject', ['Util'], function(Util) {
+kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
   'use strict';
 
   function addCommand(context, commandConfig) {
@@ -10,8 +10,8 @@ kilo('CommandObject', ['Util'], function(Util) {
     return context;
   }
 
-  function done() { //TODO: change to 'end'
-    return addCommand(this, {done: true});
+  function end() {
+    return addCommand(this, {end: true});
   }
 
   function get(func) {
@@ -25,15 +25,17 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function watch(prop) {
+    this.end();
     return addCommand(this, {
       watchProp: prop,
-      lastValue: null, // FIXED... hopefully -- doesn't work because values vary between sourceObjects
+      lastValue: this.commandRunner.context[prop],
       logicals: [],
       specials: []
     });
   }
 
   function whenGroup(prop, value) {
+    this.end();
     return this.when(prop, value, true);
   }
 
@@ -42,6 +44,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function when(prop, value, group) {
+    this.end();
     return addCommand(this, {
       whenProp: prop,
       whenValue: value,
@@ -54,6 +57,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function whenNot(prop) {
+    this.end();
     return this.when(prop, false);
   }
 
@@ -79,22 +83,43 @@ kilo('CommandObject', ['Util'], function(Util) {
     });
   }
 
-  function set(prop, value, inc, format) {
+   function on(eventName) {
+    this.end();
     return addCommand(this, {
-      setProp: prop,
-      setValue: value,
-      inc: inc,
-      format: format
+      eventName: eventName
     });
   }
 
-  function inc(prop, value, format) {
-    return this.set(prop, value, true, format);
+  function set(objOrProp, propOrValue, value) {
+    var context, prop;
+    if(Util.isDefined(value)) {
+      // NOTE: this is an async operation so this set() may run AFTER set() calls that follow it
+      Injector.process(objOrProp, function(context) {
+        addCommand(this, {
+          setProp: propOrValue,
+          setValue: value,
+          inc: false,
+          context: context
+        });
+      }.bind(this));
+
+      return this;
+    } else {
+      return addCommand(this, {
+        setProp: objOrProp,
+        setValue: propOrValue,
+        inc: false,
+        context: context
+      });
+    }
   }
 
-  function on(eventName) {
+  function inc(prop, value, format) {
     return addCommand(this, {
-      eventName: eventName
+      setProp: prop,
+      setValue: value,
+      inc: true,
+      format: format
     });
   }
 
@@ -113,7 +138,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   return {
     commandRunner: null,
     logicMode: '',
-    done: done,
+    end: end,
     get: get,
     watch: watch,
     whenGroup: whenGroup,

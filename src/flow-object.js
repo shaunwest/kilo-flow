@@ -2,7 +2,7 @@
  * Created by Shaun on 8/10/14.
  */
 
-kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'], function(Util, Obj, CommandRunner, CommandObject, Results) {
+kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject'], function(Util, Injector, Obj, CommandRunner, CommandObject) {
   'use strict';
 
   function containsProp(prop, targetObject) {
@@ -47,6 +47,7 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     });
   }
 
+  // TODO: figure out what this might be used for
   function processSourceObjects(sourceObjects, count) {
     var i, processedObjects = [];
 
@@ -111,48 +112,31 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     watch: function() {
       return flowAlias(this.flow(), 'watch', arguments);
     },
-    /*flow: function(hookId) {
-      var commandRunners, chronoId;
-      var commandObject = Obj.create(CommandObject);
-      var results = commandObject.results = Obj.clone(Results);
-      hookId = hookId || this.hookId;
-
-      if(hookId && this.getChronoId) {
-        chronoId = this.getChronoId(hookId);
-        commandObject.hookId = hookId;
-      }
-      commandObject.sourceIndex = 0;
-
-      commandRunners = createCommandRunners([this], chronoId);
-      results.add([this], commandRunners);
-
-      attachCommandFunctions(this, commandObject);
-
-      return commandObject;
-    },*/
-    /*source: function(sourceObjects, count, hookId, results) {
-      var commandRunners;
-
-      results = this.results = results || Obj.clone(Results);
-      this.sourceIndex = 0;
-      this.hookId = hookId;
-      sourceObjects = processSourceObjects(sourceObjects, count);
-      commandRunners = createCommandRunners(sourceObjects, hookId);
-      results.add(sourceObjects, commandRunners);
-
-      // TODO: should old command functions be removed (if they exist)?
-      // TODO: investigate need for [0]
-      // TODO: this isn't right
-      attachCommandFunctions(sourceObjects[0], this);
-      return this;
-    },*/
     flow: function(hookId) {
       return this.instance(this, hookId);
     },
-    instance: function(sourceObject, hookId) {
+    model: function(sourceObject, hookId) {
+      /*var model;
+
+      Injector.process(sourceObject, function(sourceObject) {
+        model = {
+          '$': sourceObject        
+        };
+      });*/
+
+      return this.instance(sourceObject, hookId, true);
+    },
+    instance: function(sourceObject, hookId, model) {
       var flowInstance = Obj.merge(CommandObject);
-      flowInstance.commandRunner = new CommandRunner(sourceObject, hookId);
-      attachCommandFunctions(sourceObject, flowInstance);
+      flowInstance.commandRunner = new CommandRunner(null, hookId);
+      
+      Injector.process(sourceObject, function(_sourceObject) {
+        sourceObject = (model) ? { '$': _sourceObject } : _sourceObject; 
+        attachCommandFunctions(sourceObject, flowInstance);
+        flowInstance.commandRunner.context = sourceObject;
+        flowInstance.commandRunner.go();
+      });
+      
       return flowInstance;
     }
   };

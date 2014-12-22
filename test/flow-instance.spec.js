@@ -1,11 +1,20 @@
 describe('Flow instance', function() {
-  var Flow, TIMEOUT = 50;
+  var Flow, Watch, When, On, TIMEOUT = 50;
 
-  beforeEach(function() {
-    Flow = kilo('Flow');
+  kilo.log = false;
+
+  beforeEach(function(done) {
+    use(['Flow', 'Flow.Watch', 'Flow.When', 'Flow.On', 'Flow.Model'], function(_Flow, _Watch, _When, _On, _Model) {
+      Flow = _Flow;
+      Watch = _Watch;
+      When = _When;
+      On = _On;
+      Model = _Model;
+      done();
+    });
   });
 
-  describe('property', function() {
+  describe('property of simple object', function() {
     var myObj, flowObj;
 
     beforeEach(function(done) {
@@ -22,22 +31,20 @@ describe('Flow instance', function() {
       setTimeout(done, TIMEOUT);
     });
 
-    it('should be true if foo is defined', function() {
+    it('should be true when foo is defined', function() {
       expect(myObj.bar).toBe(true);
     });
   });
   
-  describe('property', function() {
-    var myObj, flowObj;
+  describe('property of simple object', function() {
+    var myObj;
 
     beforeEach(function(done) {
       myObj = {
         bar: false
       };
 
-      flowObj = Flow(myObj);
-      flowObj
-        .when('foo')
+      When(myObj, 'foo')
         .set('bar', true);
 
       setTimeout(done, TIMEOUT);
@@ -48,8 +55,8 @@ describe('Flow instance', function() {
     });
   });
 
-  describe('property', function() {
-    var myObj, flowObj;
+  describe('property of simple object', function() {
+    var myObj;
 
     beforeEach(function(done) {
       myObj = {
@@ -57,9 +64,7 @@ describe('Flow instance', function() {
         bar: false
       };
 
-      flowObj = Flow(myObj);
-      flowObj
-        .when('foo', false)
+      When(myObj, 'foo', false)
         .set('bar', true);
 
       setTimeout(done, TIMEOUT);
@@ -67,6 +72,106 @@ describe('Flow instance', function() {
 
     it('should be true if foo is false', function() {
       expect(myObj.bar).toBe(true);
+    });
+  });
+
+  describe('property of nested object', function() {
+    var myObj;
+
+    beforeEach(function(done) {
+      myObj = {
+        foo: {
+          bar: true,
+          baz: false
+        }
+      };
+
+      When(myObj, 'foo.bar', true)
+        .set('foo.baz', true);
+
+      setTimeout(done, TIMEOUT);
+    });
+
+    it('should be true if foo is false', function() {
+      expect(myObj.foo.baz).toBe(true);
+    });
+  });
+
+  describe('property of object', function() {
+    var myObj, myModel;
+
+    beforeEach(function(done) {
+      myObj = {
+        foo: true
+      };
+
+      myModel = Model(myObj)
+        .when('$.foo', true)
+        .set('bar', true)
+        .source();
+
+      setTimeout(done, TIMEOUT);
+    });
+
+    it('should be true if model property is true', function() {
+      expect(myModel.bar).toBe(true);
+    });
+  });
+  describe('property of second object', function() {
+    var myObj1, myObj2;
+
+    beforeEach(function(done) {
+      myObj1 = {
+        foo: false
+      };
+
+      myObj2 = {
+        bar: false
+      };
+
+      When(myObj1, 'foo', true)
+        .set(myObj2, 'bar', true);
+
+      myObj1.foo = true;
+
+      setTimeout(done, TIMEOUT);
+    });
+
+    it('should be true if foo is true', function() {
+      expect(myObj2.bar).toBe(true);
+    });
+  });
+
+  describe('property of dependency object', function() {
+    var myObj1, myObj2;
+
+    beforeEach(function(done) {
+      myObj1 = {
+        foo: false
+      };
+
+      myObj2 = {
+        baz: false
+      };
+
+      register('myObj2', function() {
+        return myObj2;
+      });
+        
+      When(myObj1, 'foo', true)
+        .set('myObj2', 'baz', true);
+
+      myObj1.foo = true;
+      
+      setTimeout(done, TIMEOUT);
+    });
+
+    afterEach(function() {
+      kilo.unresolve('myObj2');      
+    });
+
+    it('should be true if foo is true', function() {
+      expect(myObj2.baz).toBe(true);
     });
   });
 
@@ -91,6 +196,76 @@ describe('Flow instance', function() {
 
     it('should be greater than 10', function() {
       expect(myObj.bar).toBeGreaterThan(10);
+    });
+  });
+
+  describe('property', function() {
+    var myObj;
+
+    beforeEach(function(done) {
+      myObj = {
+        foo: true, 
+        bar: false
+      };
+
+      Watch(myObj, 'foo').set('bar', true);
+
+      setTimeout(makeTimeout(function() {
+        return (myObj.bar === true);
+      }, done), TIMEOUT);
+
+      myObj.foo = false;
+    });
+
+    it('should be set to true when foo changes', function() {
+      expect(myObj.bar).toBe(true);
+    });
+  });
+
+  describe('property', function() {
+    var fooEvent, myEventTarget;
+
+    beforeEach(function(done) {
+      myEventTarget = new Image();
+
+      On(myEventTarget, 'fooEvent').set('bar', true);
+
+      setTimeout(makeTimeout(function() {
+        return (myEventTarget.bar === true);
+      }, done), TIMEOUT);
+
+      fooEvent = document.createEvent('Event');
+      fooEvent.initEvent('fooEvent', true, true);
+      myEventTarget.dispatchEvent(fooEvent);
+    });
+
+    it('should be set to true when an event occurs', function() {
+      expect(myEventTarget.bar).toBe(true);
+    });
+  });
+
+  describe('property of model', function() {
+    var fooEvent, myEventTarget, myModel;
+
+    beforeEach(function(done) {
+      myEventTarget = new Image();
+
+      myModel = Model(myEventTarget)
+      .on('$.fooEvent')
+      .set('bar', true)
+      .source();
+
+      setTimeout(makeTimeout(function() {
+        return (myModel.bar === true);
+      }, done), TIMEOUT);
+
+      fooEvent = document.createEvent('Event');
+      fooEvent.initEvent('fooEvent', true, true);
+      myEventTarget.dispatchEvent(fooEvent);
+    });
+
+    it('should be set to true when an event occurs', function() {
+      expect(myModel.bar).toBe(true);
     });
   });
 });

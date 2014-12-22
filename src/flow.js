@@ -2,22 +2,32 @@
  * Created by Shaun on 9/7/14.
  */
 
-kilo('Flow', ['Util', 'Obj', 'FlowObject'], function(Util, Obj, FlowObject) {
+register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowObject, registerAll) {
   'use strict';
 
-  function Flow(sourceObject, count, hookId) {
-    //var flowObject = Obj.create(FlowObject);
-    //return flowObject.source(sourceObjects, count, hookId);
-    return FlowObject.instance(sourceObject);
-  }
-
-  return Flow;
+  registerAll({
+    Flow: function(sourceObject, hookId) {
+      return FlowObject.instance(sourceObject, hookId);
+    },
+    'Flow.When': function(sourceObject, key, val) {
+      return FlowObject.instance(sourceObject).when(key, val);
+    },
+    'Flow.Watch': function(sourceObject, key) {
+      return FlowObject.instance(sourceObject).watch(key);
+    },
+    'Flow.On': function(sourceObject, eventName) {
+      return FlowObject.instance(sourceObject).on(eventName);
+    },
+    'Flow.Model': function(sourceObject, hookId) {
+      return FlowObject.model(sourceObject, hookId);
+    }
+  });
 });
 
-kilo.flowElement = function(elementId, funcOrDeps, func) {
+/*register('FlowElement', ['Element','Flow', 'Util'], function(Element, Flow, Util) {
   'use strict';
 
-  kilo(['Flow', 'Util'], function(Flow, Util) {
+  return function(elementId, funcOrDeps, func) {
     var newFunc, newFuncOrDeps;
 
     if(Util.isFunction(funcOrDeps)) {
@@ -32,7 +42,10 @@ kilo.flowElement = function(elementId, funcOrDeps, func) {
       };
     }
 
-    kilo.element(elementId, newFuncOrDeps, newFunc);
-  });
-};
+    return Element(elementId, newFuncOrDeps, newFunc);
+  };
+});
 
+use(['FlowElement'], function(FlowElement) {
+  kilo.flowElement = FlowElement;
+});*/

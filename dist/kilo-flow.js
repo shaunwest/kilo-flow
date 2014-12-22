@@ -2,15 +2,14 @@
  * Created by Shaun on 5/1/14.
  */
 
-var kilo = (function(id) {
+(function(id) {
   'use strict';
 
-  var core, Util, Injector, appConfig = {}, gids = {}, elementMap = {}, previousOwner = undefined;
+  var core, Util, Injector, types, appConfig = {}, gids = {}, allElements, previousOwner = undefined;
   var CONSOLE_ID = id;
 
   Util = {
     isDefined: function(value) { return (typeof value !== 'undefined'); },
-    //isObject: function(value) { return (value !== null && typeof value === 'object'); },
     isBoolean: function(value) { return (typeof value === 'boolean'); },
     def: function(value, defaultValue) { return (typeof value === 'undefined') ? defaultValue : value; },
     error: function(message) { throw new Error(CONSOLE_ID + ': ' + message); },
@@ -29,17 +28,20 @@ var kilo = (function(id) {
     }
   };
 
-  ['Array', 'Object', 'Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp', 'HTMLImageElement'].
-    forEach(function(name) { // TODO: don't use forEach
-      Util['is' + name] = function(obj) {
-        return Object.prototype.toString.call(obj) === '[object ' + name + ']';
-      };
-    });
+  types = ['Array', 'Object', 'Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp', 'HTMLImageElement'];
+  for(var i = 0; i < types.length; i++) {
+    Util['is' + types[i]] = (function(type) { 
+      return function(obj) {
+        return Object.prototype.toString.call(obj) === '[object ' + type + ']';
+      }; 
+    })(types[i]);
+  }
 
   Injector = {
     unresolved: {},
     modules: {},
     register: function(key, deps, func, scope) {
+      this.unresolve(key);
       this.unresolved[key] = {deps: deps, func: func, scope: scope};
       return this;
     },
@@ -47,65 +49,123 @@ var kilo = (function(id) {
       if(this.modules[key]) {
         delete this.modules[key];
       }
+      return this;
     },
     setModule: function(key, module) { // save a module without doing dependency resolution
       this.modules[key] = module;
       return this;
     },
-    getDependency: function(key) {
-      var module = this.modules[key];
+    getDependency: function(key, cb) {
+      var modules, module;
+
+      modules = this.modules;
+      module = modules[key];
+
       if(module) {
-        return module;
+        cb(module);
+        return;
       }
 
       module = this.unresolved[key];
       if(!module) {
-        Util.warn('Module \'' + key + '\' not found');
-        return null;
+        getElement(key, null, function(element) {
+          if(element) {
+            cb(element);
+          } else {
+            Util.warn('Module \'' + key + '\' not found');
+          }
+        });
+        return;
       }
 
       Util.log('Resolving dependencies for \'' + key + '\'');
-      module = this.modules[key] = this.resolveAndApply(module.deps, module.func, module.scope);
-      if(Util.isObject(module)) {
-        module.getType = function() { return key; };
-      }
-      return module;
-    },
-    resolve: function(deps, func, scope) {
-      var dep, depName, args = [], i;
-      for(i = 0; i < deps.length; i++) {
-        depName = deps[i];
-        dep = this.getDependency(depName);
-        if(dep) {
-          args.push(dep);
-        } else {
-          Util.warn('Can\'t resolve ' + depName);
+      this.resolveAndApply(module.deps, module.func, module.scope, function(module) {
+        if(Util.isObject(module)) {
+          module.getType = function() { return key; };
         }
+        modules[key] = module;
+        cb(module);
+      });
+
+      return;
+    },
+    resolve: function(deps, cb, index, results) {
+      var dep, depName;
+      var that = this; // FIXME
+
+      if(!deps) {
+        done();
+        return;
       }
-      return args;
+
+      index = Util.def(index, 0);
+
+      depName = deps[index];
+      if(!depName) {
+        cb(results);
+        return;
+      }
+      
+      this.getDependency(depName, function(dep) {
+        if(!results) {
+          results = [];
+        }
+        if(dep) {
+          results.push(dep);
+        } else {
+          Util.error('Can\'t resolve ' + depName);
+        }
+
+        that.resolve(deps, cb, index + 1, results);    
+      });
     },
     apply: function(args, func, scope) {
-      return func.apply(scope || core, args);
+      var result = func.apply(scope || core, args);
+      return result;
     },
-    resolveAndApply: function(deps, func, scope) {
-      return this.apply(this.resolve(deps), func, scope);
+    resolveAndApply: function(deps, func, scope, cb) {
+      var that = this;
+      this.resolve(deps, function(args) {
+        var result = that.apply(args, func, scope);
+        if(cb) {
+          cb(result);
+        }
+      });
+    },
+    process: function(deps, cb) {
+      var i, numDeps, obj;
+      if(Util.isArray(deps)) {
+        for(i = 0, numDeps = deps.length; i < numDeps; i++) {
+          obj = deps[i]; 
+          if(Util.isString(obj)) {
+            this.getDependency(obj, function(obj) {
+              cb(obj);
+            });
+          } else {
+            cb(obj);
+          }
+        }
+      } else {
+        if(Util.isString(deps)) {
+          this.getDependency(deps, function(deps) {
+            cb(deps);
+          });
+        } else {
+          cb(deps);
+        }
+      }
     }
   };
-
-  /** add these basic modules to the injector */
-  Injector
-    .setModule('helper', Util).setModule('Helper', Util).setModule('Util', Util)
-    .setModule('injector', Injector).setModule('Injector', Injector)
-    .setModule('appConfig', appConfig);
 
   /** run onReady when document readyState is 'complete' */
   function onDocumentReady(onReady) {
     var readyStateCheckInterval;
-    if (document.readyState === 'complete') {
+    if(!onReady) return;
+    if(document.readyState === 'complete') {
       onReady(document);
     } else {
       readyStateCheckInterval = setInterval(function () {
-        if (document.readyState === 'complete') {
+        if(document.readyState === 'complete') {
           onReady(document);
           clearInterval(readyStateCheckInterval);
         }
@@ -113,17 +173,32 @@ var kilo = (function(id) {
     }
   }
 
+  function registerDefinitionObject(result) {
+    var key;
+    if(Util.isObject(result)) {
+      for(key in result) {
+        if(result.hasOwnProperty(key)) {
+          Injector.register(key, [], (
+            function(func) {
+              return function() { return func; };
+            }
+          )(result[key]));
+        }
+      }
+    }
+  }
+
   /** the main interface */
   core = function(keyOrDeps, depsOrFunc, funcOrScope, scope) {
-    var result;
+    var result, key;
+
     // get dependencies
     if(Util.isArray(keyOrDeps)) {
-      result = Injector.resolveAndApply(keyOrDeps, depsOrFunc, funcOrScope);
-      if(Util.isObject(result)) {
-        Object.keys(result).forEach(function(key) { // TODO: don't use Object.keys
-          Injector.setModule(key, result[key]);
-        });
-      }
+      Injector.resolveAndApply(keyOrDeps, depsOrFunc, funcOrScope);
+
+    // no dependencies, just a function (and optionally a scope)
+    } else if(Util.isFunction(keyOrDeps)) {
+      Injector.apply([], keyOrDeps, depsOrFunc);
 
     // register a new module (with dependencies)
     } else if(Util.isArray(depsOrFunc) && Util.isFunction(funcOrScope)) {
@@ -132,15 +207,20 @@ var kilo = (function(id) {
     // register a new module (without dependencies)
     } else if(Util.isFunction(depsOrFunc)) {
       Injector.register(keyOrDeps, [], depsOrFunc, funcOrScope);
-
-    // get a module
-    } else if(keyOrDeps && !Util.isDefined(depsOrFunc)) {
-      return Injector.getDependency(keyOrDeps);
     }
 
     return null;
   };
 
+  core.use = function(deps, func, scope) {
+    if(Util.isString(deps)) {
+      deps = [deps];      
+    }
+    core(deps, func, scope);
+  };
+  core.register = function(key, depsOrFunc, funcOrScope, scope) {
+    core(key, depsOrFunc, funcOrScope, scope);
+  };
   core.unresolve = function(key) {
     Injector.unresolve(key);
   };
@@ -149,97 +229,68 @@ var kilo = (function(id) {
     return core;
   };
 
-  function findElement(elementId, elements, cb) {
-    var i, numElements, selectedElement;
-
-    for(i = 0, numElements = elements.length; i < numElements; i++) {
-      selectedElement = elements[i];
-      if(selectedElement.hasAttribute('data-' + elementId)) {
-        if(!elementMap[elementId]) {
-          elementMap[elementId] = [];
-        }
-        elementMap[elementId].push(selectedElement);
-        cb(selectedElement);
-      }
-    }
-  }
-
-  function executeElement(elementId, elements, deps, func, parentElement) {
-    findElement(elementId, elements, function(element) {
-      if(deps) {
-        func.apply(element, Injector.resolve(deps));
-      } else {
-        func.call(element, parentElement);
-      }
-    });
-  }
-
-  // TODO: decide if element() will be moved to new package (kilo-element)
-  core.element = function(elementId, funcOrDeps, func) {
-    var deps, allElements;
-
-    if(Util.isFunction(funcOrDeps)) {
-      func = funcOrDeps;
-    } else if(Util.isArray(funcOrDeps)) {
-      deps = funcOrDeps;
-    } else {
-      Util.error('element: second argument should be function or dependency array.');
-    }
-
+  // TODO: performance
+  function getElement(elementId, container, cb) {
     onDocumentReady(function(document) {
-      var body;
-      if(!allElements) {
-        body = document.getElementsByTagName('body');
-        if(!body || !body[0]) {
-          return;
+      var i, numElements, element, elements, bracketIndex, results = [];
+      if(!container) {
+        if(!allElements) {
+          container = document.getElementsByTagName('body');
+          if(!container || !container[0]) {
+            return;
+          }
+          allElements = container[0].querySelectorAll('*');
         }
-        allElements = body[0].querySelectorAll('*');
+        elements = allElements;
+      } else {
+        elements = container.querySelectorAll('*');
       }
-      executeElement(elementId, allElements, deps, func);
-    });
 
-    return this;
-  };
-  core.childElement = function(parentId, elementId, funcOrDeps, func) {
-    var deps;
-
-    if(Util.isFunction(funcOrDeps)) {
-      func = funcOrDeps;
-    } else if(Util.isArray(funcOrDeps)) {
-      deps = funcOrDeps;
-    } else {
-      Util.error('element: second argument should be function or dependency array.');
-    }
-
-    onDocumentReady(function() {
-      var i, elements, numParents, parentElement;
-      var parentElements = elementMap[parentId];
-      for(i = 0, numParents = parentElements.length; i < numParents; i++) {
-        parentElement = parentElements[i];
-        elements = parentElement.querySelectorAll('*');
-        executeElement(elementId, elements, deps, func, parentElement);
+      bracketIndex = elementId.indexOf('[]');
+      if(bracketIndex !== -1) {
+        elementId = elementId.substring(0, bracketIndex);
       }
-    });
+      for(i = 0, numElements = elements.length; i < numElements; i++) {
+        element = elements[i];
+        if(element.hasAttribute('data-' + elementId)) {
+          results.push(element);
+        }
+      }
+      if(bracketIndex === -1) {
+        cb(results[0]);
+      } else {
+        cb(results);
+      }
+    }); 
+  }
 
-    return this;
-  };
-  core.onDocumentReady = core.ready = onDocumentReady;
+  core.onDocumentReady = onDocumentReady;
   core.log = true;
 
-  /** create global reference to core */
+  /** add these basic modules to the injector */
+  Injector
+    .setModule('helper', Util).setModule('Helper', Util).setModule('Util', Util)
+    .setModule('injector', Injector).setModule('Injector', Injector)
+    .setModule('element', getElement)
+    .setModule('registerAll', registerDefinitionObject)
+    .setModule('appConfig', appConfig);
+
+  /** create global references to core */
   if(window[id]) {
     Util.warn('a preexisting value at namespace \'' + id + '\' has been overwritten.');
     previousOwner = window[id];
   }
   window[id] = core;
+  if(!window.register) window.register = core.register;
+  if(!window.use) window.use = core.use;
+
   return core;
 })('kilo');
-
 /**
  * Created by Shaun on 10/18/14.
  */
 
-kilo('Canvas', [], function() {
+register('Canvas', [], function() {
   'use strict';
 
   return {
@@ -260,19 +311,10 @@ kilo('Canvas', [], function() {
   };
 });
 /**
- * Created by Shaun on 11/2/2014.
- */
-
-kilo('Extend', ['Obj'], function(Obj) {
-  'use strict';
-
-  return Obj.extend.bind(Obj);
-});
-/**
  * Created by Shaun on 8/3/14.
  */
 
-kilo('Factory', ['Obj', 'Pool'], function(Obj, Pool) {
+register('Factory', ['Obj', 'Pool'], function(Obj, Pool) {
   'use strict';
 
   return function(TypeObject) {
@@ -286,7 +328,7 @@ kilo('Factory', ['Obj', 'Pool'], function(Obj, Pool) {
  * Created by Shaun on 7/6/14.
  */
 
-kilo('Func', [], function() {
+register('Func', [], function() {
   'use strict';
 
   function partial(f) {
@@ -325,7 +367,7 @@ kilo('Func', [], function() {
  * Created by Shaun on 6/4/14.
  */
 
-kilo('HashArray', [], function() {
+register('HashArray', function() {
   'use strict';
 
   function HashArray() {
@@ -422,7 +464,7 @@ kilo('HashArray', [], function() {
  * This is a decorator for HashArray. It adds automatic id management.
  */
 
-kilo('KeyStore', ['HashArray', 'Util'], function(HashArray, Util) {
+register('KeyStore', ['HashArray', 'Util'], function(HashArray, Util) {
   'use strict';
 
   function KeyStore() {
@@ -491,45 +533,51 @@ kilo('KeyStore', ['HashArray', 'Util'], function(HashArray, Util) {
  * Created by Shaun on 11/2/2014.
  */
 
-kilo('Mixin', ['Obj'], function(Obj) {
+register('Merge', ['Obj'], function(Obj) {
   'use strict';
 
-  return Obj.mixin.bind(Obj);
+  return Obj.merge.bind(Obj);
 });
 
 /**
  * Created by Shaun on 6/28/14.
  */
 
-kilo('Obj', ['Injector', 'Util', 'Func', 'Pool'], function(Injector, Util, Func, Pool) {
+register('Obj', ['Injector', 'Util', 'Func', 'Pool'], function(Injector, Util, Func, Pool) {
   'use strict';
 
-  function mergeObjects(giver, receiver, allowWrap, exceptionOnCollisions) {
-    giver = giver || {};
-    if(giver.__mixin === false) { // What about receiver?
-      Util.error('Can\'t mixin object because the object has disallowed it.');
-      return;
-    }
-    Object.keys(giver).forEach(function(prop) {
-      if(receiver.hasOwnProperty(prop)) {
-        if(allowWrap) {
-          receiver[prop] = Func.wrap(receiver[prop], giver[prop]);
-          Util.log('Mixin: wrapped \'' + prop + '\'');
-        } else if(exceptionOnCollisions) {
-          Util.error('Failed to merge mixin. Method \'' +
-            prop + '\' caused a name collision.');
-        } else {
-          receiver[prop] = giver[prop];
-          Util.log('Mixin: overwrote \'' + prop + '\'');
-        }
-      } else {
-        receiver[prop] = giver[prop];
-      }
+  function mergeObject(source, destination, allowWrap, exceptionOnCollisions) {
+    source = source || Pool.getObject();
+    destination = destination || Pool.getObject();
+
+    Object.keys(source).forEach(function(prop) {
+      assignProperty(source, destination, prop, allowWrap, exceptionOnCollisions);
     });
+
+    return destination;
+  }
+
+  function assignProperty(source, destination, prop, allowWrap, exceptionOnCollisions) {
+    if(destination.hasOwnProperty(prop)) {
+      if(allowWrap) {
+        destination[prop] = Func.wrap(destination[prop], source[prop]);
+        Util.log('Merge: wrapped \'' + prop + '\'');
+      } else if(exceptionOnCollisions) {
+        Util.error('Failed to merge mixin. Method \'' +
+          prop + '\' caused a name collision.');
+      } else {
+        destination[prop] = source[prop];
+        Util.log('Merge: overwrote \'' + prop + '\'');
+      }
+    } else {
+      destination[prop] = source[prop];
+    }
+
+    return destination;
   }
 
   function augmentMethods(targetObject, augmenter) {
-    var newObject = {}; // TODO: use pooling?
+    var newObject = {}; // FIXME: use pooling?
 
     Object.keys(targetObject).forEach(function(prop) {
       if(!Util.isFunction(targetObject[prop])) {
@@ -553,85 +601,92 @@ kilo('Obj', ['Injector', 'Util', 'Func', 'Pool'], function(Injector, Util, Func,
     };
   }
 
-  return {
-    replaceMethod: function(context, oldMethod, newMethod, message) {
-      Object.keys(context).forEach(function(prop) {
-        if(context[prop] === oldMethod) {
-          console.log(message);
-          context[prop] = newMethod;
-        }
-      });
-    },
-    augment: function(object, augmenter) {
-      return augmentMethods(object, augmenter);
-    },
-    clone: function(object) {
-      return this.merge(object);
-    },
-    merge: function(source, destination) {
-      var prop;
-      destination = destination || {};
-      for(prop in source) {
-        if(source.hasOwnProperty(prop)) {
-          destination[prop] = source[prop];
-        }
+  function replaceMethod(context, oldMethod, newMethod, message) {
+    Object.keys(context).forEach(function(prop) {
+      if(context[prop] === oldMethod) {
+        context[prop] = newMethod;
       }
-      return destination;
-    },
-    create: function(source) {
-      return this.mixin(source);
-    },
-    print: function(obj) {
-      var prop, str = '';
+    });
+  }
+
+  function augment(obj, augmenter) {
+    return augmentMethods(obj, augmenter);
+  }
+
+  function quickClone(obj) {
+    return quickMerge(obj);
+  }
+
+  function quickMerge(source, destination) {
+    var prop;
+    destination = destination || Pool.getObject();
+    for(prop in source) {
+      if(source.hasOwnProperty(prop)) {
+        destination[prop] = source[prop];
+      }
+    }
+    return destination;
+  }
+
+  function print(obj) {
+    var prop, str = '';
+    if(Util.isObject(obj)) {
       for(prop in obj) {
         if(obj.hasOwnProperty(prop) && !Util.isFunction(obj[prop])) {
           str += prop + ': ' + obj[prop] + '<br>';
         }
       }
-      return str;
-    },
-    clear: function(obj) {
-      var prop;
-      for(prop in obj) {
-        if(obj.hasOwnProperty(prop)) {
-          delete obj[prop];
-        }
-      }
-      return obj;
-    },
-    extend: function() {
-      var args = (arguments.length > 1) ?
-        Util.argsToArray(arguments) :
-        arguments[0];
-      return this.mixin(args, true);
-    },
-    // TODO: make this work with functions
-    // TODO: should it always create a new object? Should be able to mix into existing object
-    mixin: function(giver, allowWrap, exceptionOnCollisions) {
-      var receiver = Pool.getObject();
-      if(Util.isArray(giver)) {
-        giver.forEach(function(obj) {
-          if(Util.isString(obj)) {
-            obj = Injector.getDependency(obj);
-          }
-          mergeObjects(obj, receiver, allowWrap, exceptionOnCollisions);
-        });
-      } else {
-        if(Util.isString(giver)) {
-          giver = Injector.getDependency(giver);
-        }
-        mergeObjects(giver, receiver, allowWrap, exceptionOnCollisions);
-      }
-
-      return receiver;
     }
+    return str;
+  }
+
+  function clear(obj) {
+    var prop;
+    for(prop in obj) {
+      if(obj.hasOwnProperty(prop)) {
+        delete obj[prop];
+      }
+    }
+    return obj;
+  }
+
+  function clone(obj) {
+    return merge(obj);
+  }
+
+  function merge(source, destination, exceptionOnCollisions) {
+    Injector.process(source, function(sourceObj) {
+      destination = mergeObject(sourceObj, destination, false, exceptionOnCollisions);
+    });
+
+    return destination;
+  }
+
+  function wrap(source, destination) {
+    Injector.process(source, function(sourceObj) {
+      destination = mergeObject(sourceObj, destination, true);
+    });
+
+    return destination;
+  }
+
+  return {
+    print: print,
+    clear: clear,
+    clone: clone,
+    quickClone: quickClone,
+    merge: merge,
+    quickMerge: quickMerge,
+    wrap: wrap,
+    augment: augment,
+    replaceMethod: replaceMethod
   };
 });
 /**
  * Created by Shaun on 7/4/14.
  */
 
-kilo('Pool', [], function() {
+register('Pool', [], function() {
   'use strict';
 
   var objects = [];
@@ -644,6 +699,7 @@ kilo('Pool', [], function() {
     return newObject;
   }
 
+  // FIXME: replace with Obj.clear()
   function clearObject(obj) {
     var prop;
     for(prop in obj) {
@@ -672,7 +728,7 @@ kilo('Pool', [], function() {
  * Created by Shaun on 7/16/14.
  */
 
-kilo('rect', [], function() {
+register('rect', [], function() {
   'use strict';
 
   function containsPoint(x, y, rect) {
@@ -745,6 +801,15 @@ kilo('rect', [], function() {
   };
 });
 /**
+ * Created by Shaun on 11/2/2014.
+ */
+
+register('Wrap', ['Obj'], function(Obj) {
+  'use strict';
+
+  return Obj.wrap.bind(Obj);
+});
+/**
  * Created by Shaun on 5/31/14.
 
   http://paulirish.com/2011/requestanimationframe-for-smart-animating/
@@ -806,15 +871,15 @@ kilo('rect', [], function() {
  * Created by Shaun on 6/7/14.
  */
 
-kilo('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Helper, Chrono, Func) {
+kilo('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Util, Scheduler, Func) {
   'use strict';
 
   return {
     onFrame: function(callback, id) {
-      var gid = Helper.getGID(id);
+      var gid = Util.getGID(id);
 
-      if(!this.chronoIds) {
-        this.chronoIds = [];
+      if(!this.schedulerIds) {
+        this.schedulerIds = [];
       }
       if(!this.hooks) {
         this.hooks = {};
@@ -824,30 +889,31 @@ kilo('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Helper, Chrono, 
       if(id) {
         this.hooks[id] = gid;
       }
-      this.chronoIds.push(Chrono.register(callback, gid));
+      this.schedulerIds.push(Scheduler.register(callback, gid));
       return this;
     },
-    getChronoId: function(hookId) {
+    getSchedulerId: function(hookId) {
       if(!this.hooks) {
         return null;
       }
       return this.hooks[hookId];
     },
-    // wraps an existing chrono task
+    // wraps an existing Scheduler task
     hook: function(id, wrapper) {
-      var f, chronoId = this.getChronoId(id);
-      if(chronoId) {
-        f = Chrono.getRegistered(chronoId);
+      var f, schedulerId = this.getSchedulerId(id);
+      if(schedulerId) {
+        f = Scheduler.getRegistered(schedulerId);
         f = Func.wrap(f, wrapper);
-        Chrono.register(f, chronoId);
+        Scheduler.register(f, schedulerId);
       }
+      return this;
     },
-    killOnFrame: function(chronoId) {
-      if(chronoId) {
-        Chrono.unRegister(chronoId);
-      } else if(this.chronoIds) {
-        this.chronoIds.forEach(function(chronoId) {
-          Chrono.unRegister(chronoId);
+    killOnFrame: function(schedulerId) {
+      if(schedulerId) {
+        Scheduler.unRegister(schedulerId);
+      } else if(this.schedulerIds) {
+        this.schedulerIds.forEach(function(schedulerId) {
+          Scheduler.unRegister(schedulerId);
         });
       }
 
@@ -1022,7 +1088,7 @@ kilo('Scheduler', ['HashArray', 'Util'], function(HashArray, Util) {
  * Created by Shaun on 11/18/2014.
  */
 
-kilo('CommandObject', ['Util'], function(Util) {
+kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
   'use strict';
 
   function addCommand(context, commandConfig) {
@@ -1030,8 +1096,8 @@ kilo('CommandObject', ['Util'], function(Util) {
     return context;
   }
 
-  function done() { //TODO: change to 'end'
-    return addCommand(this, {done: true});
+  function end() {
+    return addCommand(this, {end: true});
   }
 
   function get(func) {
@@ -1045,15 +1111,17 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function watch(prop) {
+    this.end();
     return addCommand(this, {
       watchProp: prop,
-      lastValue: null, // FIXED... hopefully -- doesn't work because values vary between sourceObjects
+      lastValue: this.commandRunner.context[prop],
       logicals: [],
       specials: []
     });
   }
 
   function whenGroup(prop, value) {
+    this.end();
     return this.when(prop, value, true);
   }
 
@@ -1062,6 +1130,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function when(prop, value, group) {
+    this.end();
     return addCommand(this, {
       whenProp: prop,
       whenValue: value,
@@ -1074,6 +1143,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   }
 
   function whenNot(prop) {
+    this.end();
     return this.when(prop, false);
   }
 
@@ -1099,22 +1169,43 @@ kilo('CommandObject', ['Util'], function(Util) {
     });
   }
 
-  function set(prop, value, inc, format) {
+   function on(eventName) {
+    this.end();
     return addCommand(this, {
-      setProp: prop,
-      setValue: value,
-      inc: inc,
-      format: format
+      eventName: eventName
     });
   }
 
-  function inc(prop, value, format) {
-    return this.set(prop, value, true, format);
+  function set(objOrProp, propOrValue, value) {
+    var context, prop;
+    if(Util.isDefined(value)) {
+      // NOTE: this is an async operation so this set() may run AFTER set() calls that follow it
+      Injector.process(objOrProp, function(context) {
+        addCommand(this, {
+          setProp: propOrValue,
+          setValue: value,
+          inc: false,
+          context: context
+        });
+      }.bind(this));
+
+      return this;
+    } else {
+      return addCommand(this, {
+        setProp: objOrProp,
+        setValue: propOrValue,
+        inc: false,
+        context: context
+      });
+    }
   }
 
-  function on(eventName) {
+  function inc(prop, value, format) {
     return addCommand(this, {
-      eventName: eventName
+      setProp: prop,
+      setValue: value,
+      inc: true,
+      format: format
     });
   }
 
@@ -1133,7 +1224,7 @@ kilo('CommandObject', ['Util'], function(Util) {
   return {
     commandRunner: null,
     logicMode: '',
-    done: done,
+    end: end,
     get: get,
     watch: watch,
     whenGroup: whenGroup,
@@ -1182,27 +1273,72 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   function CommandRunner(context, chronoId) {
     this.chronoId = chronoId;
     this.context = context;
+    this.running = false;
     this.conditional = null;
+    this.waitQueue = [];
     this.specialQueue = null;
   }
 
   CommandRunner.prototype.add = function(command) {
+    if(!this.running) {
+      this.waitQueue.push(command);   
+    } else {
+      command = this.preProcessCommand(command);
+      this.evaluateCommand(command);
+    }
+  };
+
+  CommandRunner.prototype.go = function() {
+    this.running = true;
+    this.evaluateCommands();
+  };
+
+
+  CommandRunner.prototype.preProcessCommand = function(command) {
     if(command.setProp) {
-      command.context = getLastObject(this.context, command.setProp);
+      command.context = getLastObject(command.context || this.context, command.setProp);
       command.setProp = getLastProp(command.setProp);
     }
-    this.evaluateCommand(command);
+    else if(command.whenProp) {
+      command.context = getLastObject(this.context, command.whenProp);
+      command.whenProp = getLastProp(command.whenProp);
+    }
+    else if(command.watchProp) {
+      command.context = getLastObject(this.context, command.watchProp);
+      command.whenProp = getLastProp(command.watchProp);
+    }
+    else if(command.logicalProp) {
+      command.context = getLastObject(this.context, command.logicalProp);
+      command.logicalProp = getLastProp(command.logicalProp);
+    }
+    else if(command.eventName) {
+      command.context = getLastObject(this.context, command.eventName);
+      command.eventName = getLastProp(command.eventName);
+    }
+
+    return command;
+  };
+
+  CommandRunner.prototype.evaluateCommands = function() {
+    var command, waitQueue;
+ 
+    waitQueue = this.waitQueue;
+
+    while(command = waitQueue.shift()) {
+      command = this.preProcessCommand(command);
+      this.evaluateCommand(command);
+    }
   };
 
   CommandRunner.prototype.evaluateCommand = function(command) {
-    if(command.whenProp || command.watchProp) { // FIXME: when should cancel a previous 'event'
+    if(command.whenProp || command.watchProp) {
       if(!this.specialQueue) {
         this.specialQueue = this.repeatQueue();
       }
       this.specialQueue.push(command);
     } else if(command.eventName) {
       this.specialQueue = this.eventQueue(command);
-    } else if(command.done) {
+    } else if(command.end) {
       this.specialQueue = null;
     } else if(this.specialQueue) {
       this.specialQueue.push(command);
@@ -1230,7 +1366,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.eventQueue = function(command) {
-    var eventQueue = [], context = this.context;
+    var eventQueue = [], context = command.context; // || this.context;
     var that = this;
     if(context.addEventListener) {
       context.addEventListener(command.eventName, function() {
@@ -1279,7 +1415,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.checkWatch = function(command) {
-    var context = this.context;
+    var context = command.context; //this.context;
     if(context[command.watchProp] !== command.lastValue) {
       command.lastValue = context[command.watchProp];
       return true;
@@ -1288,7 +1424,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.evaluateConditional = function(conditional) {
-    var context = this.context;
+    var context = conditional.context; //this.context;
     if((conditional.isFunc && conditional.whenValue.call(context, context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
       conditional.whenProp && Util.isDefined(conditional.whenValue) && (context[conditional.whenProp] === conditional.whenValue) ||
@@ -1307,12 +1443,13 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
 
   CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp, logicState) {
     var numLogicals, logical, logicalType, i;
-    var context = this.context;
+    var context; // = this.context;
 
     for(i = 0, numLogicals = logicals.length; i < numLogicals; i++) {
       logical = logicals[i];
       logicalType = logical.logicalType;
       logicalProp = logical.logicalProp || logicalProp;
+      context = logical.context;
       if(logical.isFunc) {
         if(logical.logicalValue.call(context, context[logicalProp])) {
           if(logicalType === 'or') {
@@ -1335,15 +1472,10 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.executeCommand = function(command) {
-    var context = this.context, result, prop, propVal;
+    var context = command.context, //this.context,
+     result, prop, propVal;
 
-    if(command.complete) { // FIXME
-      if(this.commandQueue.length === 0) {
-        command.func.apply(command); //, command.args);
-      } else {
-        result = command;
-      }
-    } else if(command.eventName) {
+    if(command.eventName) {
       if(context.addEventListener) {
         context.addEventListener(command.eventName, command.func);
       }
@@ -1355,6 +1487,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
+        // PX
         if(command.format === 'px') {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue + 'px';
@@ -1362,6 +1495,8 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
             propVal = command.context[prop];
             command.context[prop] = parseInt(propVal) + command.setValue + 'px';
           }
+
+        // %
         } else if(command.format === '%') {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue + '%';
@@ -1369,6 +1504,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
             propVal = command.context[prop];
             command.context[prop] = parseInt(propVal) + command.setValue + '%';
           }
+        // OTHER          
         } else {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue;
@@ -1403,13 +1539,10 @@ kilo('FlowDefinition', ['helper', 'obj', 'FlowObject'], function(Helper, Obj, Fl
  * Created by Shaun on 11/18/2014.
  */
 
-kilo(['Func'], function(Func) {
+register(['Func', 'registerAll'], function(Func, registerAll) {
   'use strict';
 
-  // Hmmm... these aren't initialized when they're needed... they're initialized immediately when this
-  // containing function executes... normally we don't want to execute code that might not be
-  // needed, tho these are very small functions and they're pretty fundamental to Flow operations...
-  return {
+  registerAll({
     greaterThan: Func.fastPartial(function(compare, val) {
       return val > compare;
     }),
@@ -1435,14 +1568,14 @@ kilo(['Func'], function(Func) {
       // val = last arg
       // for each func, pass in val
     })
-  };
+  });
 });
 
 /**
  * Created by Shaun on 8/10/14.
  */
 
-kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'], function(Util, Obj, CommandRunner, CommandObject, Results) {
+kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject'], function(Util, Injector, Obj, CommandRunner, CommandObject) {
   'use strict';
 
   function containsProp(prop, targetObject) {
@@ -1487,6 +1620,7 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     });
   }
 
+  // TODO: figure out what this might be used for
   function processSourceObjects(sourceObjects, count) {
     var i, processedObjects = [];
 
@@ -1551,48 +1685,31 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
     watch: function() {
       return flowAlias(this.flow(), 'watch', arguments);
     },
-    /*flow: function(hookId) {
-      var commandRunners, chronoId;
-      var commandObject = Obj.create(CommandObject);
-      var results = commandObject.results = Obj.clone(Results);
-      hookId = hookId || this.hookId;
-
-      if(hookId && this.getChronoId) {
-        chronoId = this.getChronoId(hookId);
-        commandObject.hookId = hookId;
-      }
-      commandObject.sourceIndex = 0;
-
-      commandRunners = createCommandRunners([this], chronoId);
-      results.add([this], commandRunners);
-
-      attachCommandFunctions(this, commandObject);
-
-      return commandObject;
-    },*/
-    /*source: function(sourceObjects, count, hookId, results) {
-      var commandRunners;
-
-      results = this.results = results || Obj.clone(Results);
-      this.sourceIndex = 0;
-      this.hookId = hookId;
-      sourceObjects = processSourceObjects(sourceObjects, count);
-      commandRunners = createCommandRunners(sourceObjects, hookId);
-      results.add(sourceObjects, commandRunners);
-
-      // TODO: should old command functions be removed (if they exist)?
-      // TODO: investigate need for [0]
-      // TODO: this isn't right
-      attachCommandFunctions(sourceObjects[0], this);
-      return this;
-    },*/
     flow: function(hookId) {
       return this.instance(this, hookId);
     },
-    instance: function(sourceObject, hookId) {
+    model: function(sourceObject, hookId) {
+      /*var model;
+
+      Injector.process(sourceObject, function(sourceObject) {
+        model = {
+          '$': sourceObject        
+        };
+      });*/
+
+      return this.instance(sourceObject, hookId, true);
+    },
+    instance: function(sourceObject, hookId, model) {
       var flowInstance = Obj.merge(CommandObject);
-      flowInstance.commandRunner = new CommandRunner(sourceObject, hookId);
-      attachCommandFunctions(sourceObject, flowInstance);
+      flowInstance.commandRunner = new CommandRunner(null, hookId);
+      
+      Injector.process(sourceObject, function(_sourceObject) {
+        sourceObject = (model) ? { '$': _sourceObject } : _sourceObject; 
+        attachCommandFunctions(sourceObject, flowInstance);
+        flowInstance.commandRunner.context = sourceObject;
+        flowInstance.commandRunner.go();
+      });
+      
       return flowInstance;
     }
   };
@@ -1603,22 +1720,32 @@ kilo('FlowObject', ['Util', 'Obj', 'CommandRunner', 'CommandObject', 'Results'],
  * Created by Shaun on 9/7/14.
  */
 
-kilo('Flow', ['Util', 'Obj', 'FlowObject'], function(Util, Obj, FlowObject) {
+register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowObject, registerAll) {
   'use strict';
 
-  function Flow(sourceObject, count, hookId) {
-    //var flowObject = Obj.create(FlowObject);
-    //return flowObject.source(sourceObjects, count, hookId);
-    return FlowObject.instance(sourceObject);
-  }
-
-  return Flow;
+  registerAll({
+    Flow: function(sourceObject, hookId) {
+      return FlowObject.instance(sourceObject, hookId);
+    },
+    'Flow.When': function(sourceObject, key, val) {
+      return FlowObject.instance(sourceObject).when(key, val);
+    },
+    'Flow.Watch': function(sourceObject, key) {
+      return FlowObject.instance(sourceObject).watch(key);
+    },
+    'Flow.On': function(sourceObject, eventName) {
+      return FlowObject.instance(sourceObject).on(eventName);
+    },
+    'Flow.Model': function(sourceObject, hookId) {
+      return FlowObject.model(sourceObject, hookId);
+    }
+  });
 });
 
-kilo.flowElement = function(elementId, funcOrDeps, func) {
+/*register('FlowElement', ['Element','Flow', 'Util'], function(Element, Flow, Util) {
   'use strict';
 
-  kilo(['Flow', 'Util'], function(Flow, Util) {
+  return function(elementId, funcOrDeps, func) {
     var newFunc, newFuncOrDeps;
 
     if(Util.isFunction(funcOrDeps)) {
@@ -1633,11 +1760,13 @@ kilo.flowElement = function(elementId, funcOrDeps, func) {
       };
     }
 
-    kilo.element(elementId, newFuncOrDeps, newFunc);
-  });
-};
+    return Element(elementId, newFuncOrDeps, newFunc);
+  };
+});
 
-
+use(['FlowElement'], function(FlowElement) {
+  kilo.flowElement = FlowElement;
+});*/
 /**
  * Created by Shaun on 11/18/2014.
  */

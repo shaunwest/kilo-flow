@@ -30,27 +30,72 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   function CommandRunner(context, chronoId) {
     this.chronoId = chronoId;
     this.context = context;
+    this.running = false;
     this.conditional = null;
+    this.waitQueue = [];
     this.specialQueue = null;
   }
 
   CommandRunner.prototype.add = function(command) {
+    if(!this.running) {
+      this.waitQueue.push(command);   
+    } else {
+      command = this.preProcessCommand(command);
+      this.evaluateCommand(command);
+    }
+  };
+
+  CommandRunner.prototype.go = function() {
+    this.running = true;
+    this.evaluateCommands();
+  };
+
+
+  CommandRunner.prototype.preProcessCommand = function(command) {
     if(command.setProp) {
-      command.context = getLastObject(this.context, command.setProp);
+      command.context = getLastObject(command.context || this.context, command.setProp);
       command.setProp = getLastProp(command.setProp);
     }
-    this.evaluateCommand(command);
+    else if(command.whenProp) {
+      command.context = getLastObject(this.context, command.whenProp);
+      command.whenProp = getLastProp(command.whenProp);
+    }
+    else if(command.watchProp) {
+      command.context = getLastObject(this.context, command.watchProp);
+      command.whenProp = getLastProp(command.watchProp);
+    }
+    else if(command.logicalProp) {
+      command.context = getLastObject(this.context, command.logicalProp);
+      command.logicalProp = getLastProp(command.logicalProp);
+    }
+    else if(command.eventName) {
+      command.context = getLastObject(this.context, command.eventName);
+      command.eventName = getLastProp(command.eventName);
+    }
+
+    return command;
+  };
+
+  CommandRunner.prototype.evaluateCommands = function() {
+    var command, waitQueue;
+ 
+    waitQueue = this.waitQueue;
+
+    while(command = waitQueue.shift()) {
+      command = this.preProcessCommand(command);
+      this.evaluateCommand(command);
+    }
   };
 
   CommandRunner.prototype.evaluateCommand = function(command) {
-    if(command.whenProp || command.watchProp) { // FIXME: when should cancel a previous 'event'
+    if(command.whenProp || command.watchProp) {
       if(!this.specialQueue) {
         this.specialQueue = this.repeatQueue();
       }
       this.specialQueue.push(command);
     } else if(command.eventName) {
       this.specialQueue = this.eventQueue(command);
-    } else if(command.done) {
+    } else if(command.end) {
       this.specialQueue = null;
     } else if(this.specialQueue) {
       this.specialQueue.push(command);
@@ -78,7 +123,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.eventQueue = function(command) {
-    var eventQueue = [], context = this.context;
+    var eventQueue = [], context = command.context; // || this.context;
     var that = this;
     if(context.addEventListener) {
       context.addEventListener(command.eventName, function() {
@@ -127,7 +172,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.checkWatch = function(command) {
-    var context = this.context;
+    var context = command.context; //this.context;
     if(context[command.watchProp] !== command.lastValue) {
       command.lastValue = context[command.watchProp];
       return true;
@@ -136,7 +181,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.evaluateConditional = function(conditional) {
-    var context = this.context;
+    var context = conditional.context; //this.context;
     if((conditional.isFunc && conditional.whenValue.call(context, context[conditional.whenProp])) ||
       (conditional.watchProp && this.checkWatch(conditional, context)) ||
       conditional.whenProp && Util.isDefined(conditional.whenValue) && (context[conditional.whenProp] === conditional.whenValue) ||
@@ -155,12 +200,13 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
 
   CommandRunner.prototype.evaluateLogical = function(logicals, logicalProp, logicState) {
     var numLogicals, logical, logicalType, i;
-    var context = this.context;
+    var context; // = this.context;
 
     for(i = 0, numLogicals = logicals.length; i < numLogicals; i++) {
       logical = logicals[i];
       logicalType = logical.logicalType;
       logicalProp = logical.logicalProp || logicalProp;
+      context = logical.context;
       if(logical.isFunc) {
         if(logical.logicalValue.call(context, context[logicalProp])) {
           if(logicalType === 'or') {
@@ -183,15 +229,10 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   };
 
   CommandRunner.prototype.executeCommand = function(command) {
-    var context = this.context, result, prop, propVal;
+    var context = command.context, //this.context,
+     result, prop, propVal;
 
-    if(command.complete) { // FIXME
-      if(this.commandQueue.length === 0) {
-        command.func.apply(command); //, command.args);
-      } else {
-        result = command;
-      }
-    } else if(command.eventName) {
+    if(command.eventName) {
       if(context.addEventListener) {
         context.addEventListener(command.eventName, command.func);
       }
@@ -203,6 +244,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
+        // PX
         if(command.format === 'px') {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue + 'px';
@@ -210,6 +252,8 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
             propVal = command.context[prop];
             command.context[prop] = parseInt(propVal) + command.setValue + 'px';
           }
+
+        // %
         } else if(command.format === '%') {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue + '%';
@@ -217,6 +261,7 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
             propVal = command.context[prop];
             command.context[prop] = parseInt(propVal) + command.setValue + '%';
           }
+        // OTHER          
         } else {
           if(!command.context[prop]) {
             command.context[prop] = command.setValue;

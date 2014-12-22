@@ -2,13 +2,10 @@
  * Created by Shaun on 11/18/2014.
  */
 
-kilo(['Func'], function(Func) {
+register(['Func', 'registerAll'], function(Func, registerAll) {
   'use strict';
 
-  // Hmmm... these aren't initialized when they're needed... they're initialized immediately when this
-  // containing function executes... normally we don't want to execute code that might not be
-  // needed, tho these are very small functions and they're pretty fundamental to Flow operations...
-  return {
+  registerAll({
     greaterThan: Func.fastPartial(function(compare, val) {
       return val > compare;
     }),
@@ -34,5 +31,5 @@ kilo(['Func'], function(Func) {
       // val = last arg
       // for each func, pass in val
     })
-  };
+  });
 });

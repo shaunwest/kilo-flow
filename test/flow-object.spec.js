@@ -3,14 +3,18 @@
 describe('Flow Object', function() {
   var myObj, TIMEOUT = 50;
 
-  beforeEach(function() {
-    mixin = kilo('Mixin');
-    myObj = mixin(['FlowObject', {
-      trigger: undefined,
-      foo: {
-        bar: false   
-      }
-    }]);
+  kilo.log = false;
+  
+  beforeEach(function(done) {
+    use('Merge', function(Merge) {
+      myObj = Merge(['FlowObject', {
+        trigger: undefined,
+        foo: {
+          bar: false   
+        }
+      }]);
+      done();
+    });
   });
 
   describe('properties', function() {
