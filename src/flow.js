@@ -2,7 +2,7 @@
  * Created by Shaun on 9/7/14.
  */
 
-register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowObject, registerAll) {
+use(['Util', 'FlowObject', 'registerAll'], function(Util, FlowObject, registerAll) {
   'use strict';
 
   registerAll({
@@ -15,37 +15,11 @@ register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowO
     'Flow.Watch': function(sourceObject, key) {
       return FlowObject.instance(sourceObject).watch(key);
     },
-    'Flow.On': function(sourceObject, eventName) {
-      return FlowObject.instance(sourceObject).on(eventName);
+    'Flow.On': function(sourceObject, eventName, func) {
+      return FlowObject.instance(sourceObject).on(eventName, func);
     },
     'Flow.Model': function(sourceObject, hookId) {
       return FlowObject.model(sourceObject, hookId);
     }
   });
 });
-
-/*register('FlowElement', ['Element','Flow', 'Util'], function(Element, Flow, Util) {
-  'use strict';
-
-  return function(elementId, funcOrDeps, func) {
-    var newFunc, newFuncOrDeps;
-
-    if(Util.isFunction(funcOrDeps)) {
-      newFuncOrDeps = function() {
-        funcOrDeps.apply(Flow(this), arguments);
-      };
-
-    } else if(func) {
-      newFuncOrDeps = funcOrDeps;
-      newFunc = function() {
-        func.apply(Flow(this), arguments);
-      };
-    }
-
-    return Element(elementId, newFuncOrDeps, newFunc);
-  };
-});
-
-use(['FlowElement'], function(FlowElement) {
-  kilo.flowElement = FlowElement;
-});*/

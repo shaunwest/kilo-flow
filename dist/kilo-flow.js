@@ -66,6 +66,11 @@
         return;
       }
 
+      if(key.indexOf('/') != -1) {
+        httpGet(key, cb);
+        return;
+      }
+
       module = this.unresolved[key];
       if(!module) {
         getElement(key, null, function(element) {
@@ -188,47 +193,6 @@
     }
   }
 
-  /** the main interface */
-  core = function(keyOrDeps, depsOrFunc, funcOrScope, scope) {
-    var result, key;
-
-    // get dependencies
-    if(Util.isArray(keyOrDeps)) {
-      Injector.resolveAndApply(keyOrDeps, depsOrFunc, funcOrScope);
-
-    // no dependencies, just a function (and optionally a scope)
-    } else if(Util.isFunction(keyOrDeps)) {
-      Injector.apply([], keyOrDeps, depsOrFunc);
-
-    // register a new module (with dependencies)
-    } else if(Util.isArray(depsOrFunc) && Util.isFunction(funcOrScope)) {
-      Injector.register(keyOrDeps, depsOrFunc, funcOrScope, scope);
-
-    // register a new module (without dependencies)
-    } else if(Util.isFunction(depsOrFunc)) {
-      Injector.register(keyOrDeps, [], depsOrFunc, funcOrScope);
-    }
-
-    return null;
-  };
-
-  core.use = function(deps, func, scope) {
-    if(Util.isString(deps)) {
-      deps = [deps];      
-    }
-    core(deps, func, scope);
-  };
-  core.register = function(key, depsOrFunc, funcOrScope, scope) {
-    core(key, depsOrFunc, funcOrScope, scope);
-  };
-  core.unresolve = function(key) {
-    Injector.unresolve(key);
-  };
-  core.noConflict = function() {
-    window[id] = previousOwner;
-    return core;
-  };
-
   // TODO: performance
   function getElement(elementId, container, cb) {
     onDocumentReady(function(document) {
@@ -264,15 +228,106 @@
     }); 
   }
 
+  function parseResponse(contentType, responseText) {
+    switch(contentType) {
+      case 'application/json':
+        return JSON.parse(responseText);
+      default:
+        return responseText;
+    }
+  }
+
+  function httpGet(url, onComplete, onProgress, contentType) {
+    var req = new XMLHttpRequest();
+
+    if(onProgress) {
+      req.addEventListener('progress', function(event) {
+        onProgress(event.loaded, event.total);
+      }, false);
+    }
+
+    req.onerror = function(event) {
+      Util.error('Network error.');
+    };
+
+    req.onload = function() {
+      var contentType = contentType || this.getResponseHeader('content-type');
+      switch(this.status) {
+        case 500:
+        case 404:
+          onComplete(this.statusText, this.status);
+          break;
+        case 304:
+        default:
+          onComplete(parseResponse(contentType, this.responseText), this.status);
+      }
+    };
+
+    req.open('get', url, true);
+    req.send();
+  }
+
+  function register(key, depsOrFunc, funcOrScope, scope) {
+    // register a new module (with dependencies)
+    if(Util.isArray(depsOrFunc) && Util.isFunction(funcOrScope)) {
+      Injector.register(key, depsOrFunc, funcOrScope, scope);
+    } 
+     // register a new module (without dependencies)
+    else if(Util.isFunction(depsOrFunc)) {
+      Injector.register(key, [], depsOrFunc, funcOrScope);
+    }
+  }
+
+  core = function() {};
+
+  core.use = function(depsOrFunc, funcOrScope, scope) {
+    // one dependency
+    if(Util.isString(depsOrFunc)) {
+      Injector.resolveAndApply([depsOrFunc], funcOrScope, scope);
+    }
+    // multiple dependencies
+    else if (Util.isArray(depsOrFunc)) {
+      Injector.resolveAndApply(depsOrFunc, funcOrScope, scope);
+    } 
+    // no dependencies
+    else if(Util.isFunction(depsOrFunc)) {
+      Injector.apply([], depsOrFunc, funcOrScope);
+    }
+  };
+
+  core.register = function(key, depsOrFunc, funcOrScope, scope) {
+    if(Util.isFunction(depsOrFunc) || Util.isFunction(funcOrScope)) {
+      return register(key, depsOrFunc, funcOrScope, scope);
+    }
+    return {
+      depends: function() {
+        depsOrFunc = Util.argsToArray(arguments);
+        return this;
+      },
+      factory: function(func, scope) {
+        register(key, depsOrFunc, func, scope)
+      }
+    };
+  };
+
+  core.unresolve = function(key) {
+    Injector.unresolve(key);
+  };
+
+  core.noConflict = function() {
+    window[id] = previousOwner;
+    return core;
+  };
   core.onDocumentReady = onDocumentReady;
   core.log = true;
 
   /** add these basic modules to the injector */
   Injector
-    .setModule('helper', Util).setModule('Helper', Util).setModule('Util', Util)
-    .setModule('injector', Injector).setModule('Injector', Injector)
+    .setModule('Util', Util)
+    .setModule('Injector', Injector)
     .setModule('element', getElement)
     .setModule('registerAll', registerDefinitionObject)
+    .setModule('httpGet', httpGet)
     .setModule('appConfig', appConfig);
 
   /** create global references to core */
@@ -871,7 +926,7 @@ register('Wrap', ['Obj'], function(Obj) {
  * Created by Shaun on 6/7/14.
  */
 
-kilo('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Util, Scheduler, Func) {
+register('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Util, Scheduler, Func) {
   'use strict';
 
   return {
@@ -925,7 +980,7 @@ kilo('SchedulerObject', ['Util', 'Scheduler', 'Func'], function(Util, Scheduler,
  * Created by Shaun on 5/31/14.
  */
 
-kilo('Scheduler', ['HashArray', 'Util'], function(HashArray, Util) {
+register('Scheduler', ['HashArray', 'Util'], function(HashArray, Util) {
   'use strict';
 
   var ONE_SECOND = 1000,
@@ -1088,7 +1143,7 @@ kilo('Scheduler', ['HashArray', 'Util'], function(HashArray, Util) {
  * Created by Shaun on 11/18/2014.
  */
 
-kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
+register('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
   'use strict';
 
   function addCommand(context, commandConfig) {
@@ -1169,10 +1224,11 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     });
   }
 
-   function on(eventName) {
+   function on(eventName, func) {
     this.end();
     return addCommand(this, {
-      eventName: eventName
+      eventName: eventName,
+      func: func
     });
   }
 
@@ -1217,6 +1273,12 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     });
   }
 
+  function log(value) {
+    return addCommand(this, {
+      logValue: value
+    });
+  }
+
   function source() {
     return this.commandRunner.context;
   }
@@ -1237,6 +1299,7 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     inc: inc,
     on: on,
     call: call,
+    log: log,
     source: source
   };
 });
@@ -1245,7 +1308,7 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
  * Created by Shaun on 9/11/14.
  */
 
-kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
+register('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   'use strict';
 
   function getLastObject(obj, propStr) {
@@ -1369,8 +1432,11 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
     var eventQueue = [], context = command.context; // || this.context;
     var that = this;
     if(context.addEventListener) {
-      context.addEventListener(command.eventName, function() {
+      context.addEventListener(command.eventName, function(event) {
         var i, numCommands = eventQueue.length;
+        if(command.func) {
+          command.func.call(command.context, event);
+        }
         for(i = 0; i < numCommands; i++) {
           that.executeCommand(eventQueue[i]);
         }
@@ -1484,6 +1550,8 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
         command.args.unshift(context);
       }
       command.func.apply(command.context || context, command.args);
+    } else if(command.logValue) {
+      Util.log(command.logValue);
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
@@ -1539,7 +1607,7 @@ kilo('FlowDefinition', ['helper', 'obj', 'FlowObject'], function(Helper, Obj, Fl
  * Created by Shaun on 11/18/2014.
  */
 
-register(['Func', 'registerAll'], function(Func, registerAll) {
+use(['Func', 'registerAll'], function(Func, registerAll) {
   'use strict';
 
   registerAll({
@@ -1575,7 +1643,9 @@ register(['Func', 'registerAll'], function(Func, registerAll) {
  * Created by Shaun on 8/10/14.
  */
 
-kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject'], function(Util, Injector, Obj, CommandRunner, CommandObject) {
+register('FlowObject')
+.depends('Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject')
+.factory(function(Util, Injector, Obj, CommandRunner, CommandObject) {
   'use strict';
 
   function containsProp(prop, targetObject) {
@@ -1618,32 +1688,6 @@ kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject']
       }
       delete commandObject[prop];
     });
-  }
-
-  // TODO: figure out what this might be used for
-  function processSourceObjects(sourceObjects, count) {
-    var i, processedObjects = [];
-
-    if(Util.isArray(sourceObjects)) {
-      sourceObjects.forEach(function(sourceObject) {
-        processedObjects.push(evaluateModule(sourceObject));
-      });
-    } else if(Util.isString(sourceObjects) && count) {
-      for(i = 0; i < count; i++) {
-        processedObjects.push(evaluateModule(sourceObjects));
-      }
-    } else {
-      processedObjects.push(evaluateModule(sourceObjects));
-    }
-
-    return processedObjects;
-  }
-
-  function evaluateModule(moduleName) {
-    if(!Util.isString(moduleName)) {
-      return moduleName;
-    }
-    return Obj.create(moduleName);
   }
 
   function createCommandRunners(sourceObjects, hookId) {
@@ -1689,14 +1733,6 @@ kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject']
       return this.instance(this, hookId);
     },
     model: function(sourceObject, hookId) {
-      /*var model;
-
-      Injector.process(sourceObject, function(sourceObject) {
-        model = {
-          '$': sourceObject        
-        };
-      });*/
-
       return this.instance(sourceObject, hookId, true);
     },
     instance: function(sourceObject, hookId, model) {
@@ -1720,7 +1756,7 @@ kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject']
  * Created by Shaun on 9/7/14.
  */
 
-register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowObject, registerAll) {
+use(['Util', 'FlowObject', 'registerAll'], function(Util, FlowObject, registerAll) {
   'use strict';
 
   registerAll({
@@ -1733,40 +1769,14 @@ register(['Util', 'Obj', 'FlowObject', 'registerAll'], function(Util, Obj, FlowO
     'Flow.Watch': function(sourceObject, key) {
       return FlowObject.instance(sourceObject).watch(key);
     },
-    'Flow.On': function(sourceObject, eventName) {
-      return FlowObject.instance(sourceObject).on(eventName);
+    'Flow.On': function(sourceObject, eventName, func) {
+      return FlowObject.instance(sourceObject).on(eventName, func);
     },
     'Flow.Model': function(sourceObject, hookId) {
       return FlowObject.model(sourceObject, hookId);
     }
   });
 });
-
-/*register('FlowElement', ['Element','Flow', 'Util'], function(Element, Flow, Util) {
-  'use strict';
-
-  return function(elementId, funcOrDeps, func) {
-    var newFunc, newFuncOrDeps;
-
-    if(Util.isFunction(funcOrDeps)) {
-      newFuncOrDeps = function() {
-        funcOrDeps.apply(Flow(this), arguments);
-      };
-
-    } else if(func) {
-      newFuncOrDeps = funcOrDeps;
-      newFunc = function() {
-        func.apply(Flow(this), arguments);
-      };
-    }
-
-    return Element(elementId, newFuncOrDeps, newFunc);
-  };
-});
-
-use(['FlowElement'], function(FlowElement) {
-  kilo.flowElement = FlowElement;
-});*/
 /**
  * Created by Shaun on 11/18/2014.
  */

@@ -2,7 +2,7 @@
  * Created by Shaun on 11/18/2014.
  */
 
-kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
+register('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector) {
   'use strict';
 
   function addCommand(context, commandConfig) {
@@ -83,10 +83,11 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     });
   }
 
-   function on(eventName) {
+   function on(eventName, func) {
     this.end();
     return addCommand(this, {
-      eventName: eventName
+      eventName: eventName,
+      func: func
     });
   }
 
@@ -131,6 +132,12 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     });
   }
 
+  function log(value) {
+    return addCommand(this, {
+      logValue: value
+    });
+  }
+
   function source() {
     return this.commandRunner.context;
   }
@@ -151,6 +158,7 @@ kilo('CommandObject', ['Util', 'Obj', 'Injector'], function(Util, Obj, Injector)
     inc: inc,
     on: on,
     call: call,
+    log: log,
     source: source
   };
 });

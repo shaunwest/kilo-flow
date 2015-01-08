@@ -2,7 +2,7 @@
  * Created by Shaun on 11/18/2014.
  */
 
-register(['Func', 'registerAll'], function(Func, registerAll) {
+use(['Func', 'registerAll'], function(Func, registerAll) {
   'use strict';
 
   registerAll({

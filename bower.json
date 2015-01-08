@@ -5,7 +5,7 @@
   "authors": [
     "Shaun West <shaunwest@gmail.com>"
   ],
-  "description": "KiloJS Scheduler",
+  "description": "KiloJS Flow",
   "main": "dist/kilo-flow.js",
   "license": "MIT",
   "private": true,
@@ -16,9 +16,9 @@
     "test",
     "tests"
   ],
-  "dependencies": {
+  "devDependencies": {
     "kilo-core": "git@github.com:shaunwest/kilo-core.git",
-    "kilo-sup": "git@github.com:shaunwest/kilo-sup.git",
+    "kilo-extra": "git@github.com:shaunwest/kilo-extra.git",
     "kilo-scheduler": "git@github.com:shaunwest/kilo-scheduler.git"
   }
 }

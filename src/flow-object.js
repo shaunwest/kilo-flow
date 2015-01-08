@@ -2,7 +2,9 @@
  * Created by Shaun on 8/10/14.
  */
 
-kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject'], function(Util, Injector, Obj, CommandRunner, CommandObject) {
+register('FlowObject')
+.depends('Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject')
+.factory(function(Util, Injector, Obj, CommandRunner, CommandObject) {
   'use strict';
 
   function containsProp(prop, targetObject) {
@@ -45,32 +47,6 @@ kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject']
       }
       delete commandObject[prop];
     });
-  }
-
-  // TODO: figure out what this might be used for
-  function processSourceObjects(sourceObjects, count) {
-    var i, processedObjects = [];
-
-    if(Util.isArray(sourceObjects)) {
-      sourceObjects.forEach(function(sourceObject) {
-        processedObjects.push(evaluateModule(sourceObject));
-      });
-    } else if(Util.isString(sourceObjects) && count) {
-      for(i = 0; i < count; i++) {
-        processedObjects.push(evaluateModule(sourceObjects));
-      }
-    } else {
-      processedObjects.push(evaluateModule(sourceObjects));
-    }
-
-    return processedObjects;
-  }
-
-  function evaluateModule(moduleName) {
-    if(!Util.isString(moduleName)) {
-      return moduleName;
-    }
-    return Obj.create(moduleName);
   }
 
   function createCommandRunners(sourceObjects, hookId) {
@@ -116,14 +92,6 @@ kilo('FlowObject', ['Util', 'Injector', 'Obj', 'CommandRunner', 'CommandObject']
       return this.instance(this, hookId);
     },
     model: function(sourceObject, hookId) {
-      /*var model;
-
-      Injector.process(sourceObject, function(sourceObject) {
-        model = {
-          '$': sourceObject        
-        };
-      });*/
-
       return this.instance(sourceObject, hookId, true);
     },
     instance: function(sourceObject, hookId, model) {

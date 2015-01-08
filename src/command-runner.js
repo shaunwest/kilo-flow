@@ -2,7 +2,7 @@
  * Created by Shaun on 9/11/14.
  */
 
-kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
+register('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
   'use strict';
 
   function getLastObject(obj, propStr) {
@@ -126,8 +126,11 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
     var eventQueue = [], context = command.context; // || this.context;
     var that = this;
     if(context.addEventListener) {
-      context.addEventListener(command.eventName, function() {
+      context.addEventListener(command.eventName, function(event) {
         var i, numCommands = eventQueue.length;
+        if(command.func) {
+          command.func.call(command.context, event);
+        }
         for(i = 0; i < numCommands; i++) {
           that.executeCommand(eventQueue[i]);
         }
@@ -241,6 +244,8 @@ kilo('CommandRunner', ['Util', 'Scheduler'], function(Util, Scheduler) {
         command.args.unshift(context);
       }
       command.func.apply(command.context || context, command.args);
+    } else if(command.logValue) {
+      Util.log(command.logValue);
     } else if(command.setProp) {
       prop = command.setProp;
       if(command.inc) {
