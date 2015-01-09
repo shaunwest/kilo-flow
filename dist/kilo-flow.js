@@ -231,6 +231,7 @@
   function parseResponse(contentType, responseText) {
     switch(contentType) {
       case 'application/json':
+      case 'application/json; charset=utf-8':
         return JSON.parse(responseText);
       default:
         return responseText;
