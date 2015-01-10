@@ -1,5 +1,7 @@
 /**
  * Created by Shaun on 5/1/14.
+ *
+ * TODO: create kilo-all
  */
 
 (function(id) {
@@ -281,19 +283,38 @@
 
   core = function() {};
 
-  core.use = function(depsOrFunc, funcOrScope, scope) {
+  core.use = function(depsOrFunc, funcOrScope, scope, cb) {
+    var result;
     // one dependency
     if(Util.isString(depsOrFunc)) {
-      Injector.resolveAndApply([depsOrFunc], funcOrScope, scope);
+      Injector.resolveAndApply([depsOrFunc], funcOrScope, scope, cb);
     }
     // multiple dependencies
     else if (Util.isArray(depsOrFunc)) {
-      Injector.resolveAndApply(depsOrFunc, funcOrScope, scope);
+      Injector.resolveAndApply(depsOrFunc, funcOrScope, scope, cb);
     } 
     // no dependencies
     else if(Util.isFunction(depsOrFunc)) {
-      Injector.apply([], depsOrFunc, funcOrScope);
+      result = Injector.apply([], depsOrFunc, funcOrScope);
+      if(cb) {
+        cb(result);
+      }
     }
+  };
+
+  core.use.defer = function(depsOrFunc, funcOrScope, scope) {
+    return function(cb) {
+      core.use(depsOrFunc, funcOrScope, scope, cb);
+    };
+  };
+
+  core.use.run = function(dep, scope) {
+    return core.use.defer(dep, function(dep) {
+      if(Util.isFunction(dep)) {
+        return dep();
+      }
+      console.log('asdfasf');
+    }, scope);
   };
 
   core.register = function(key, depsOrFunc, funcOrScope, scope) {

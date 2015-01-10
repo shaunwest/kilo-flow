@@ -17,7 +17,7 @@
     "tests"
   ],
   "devDependencies": {
-    "kilo-core": "git@github.com:shaunwest/kilo-core.git",
+    "kilo": "git@github.com:shaunwest/kilo.git",
     "kilo-extra": "git@github.com:shaunwest/kilo-extra.git",
     "kilo-scheduler": "git@github.com:shaunwest/kilo-scheduler.git"
   }
